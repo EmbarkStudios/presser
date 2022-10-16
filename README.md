@@ -25,10 +25,74 @@ but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**, 
 `T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
 **also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
 value (and uninitialized memory is an invalid `u8`), *even if* your code never actually accesses that memory.
-This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬.
+This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬
+
+## A bad example
+
+```rust
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct MyDataStruct {
+    a: u8,
+    b: u32,
+}
+
+let my_data = MyDataStruct { a: 0, b: 42 };
+
+// 🚨 MyDataStruct contains 3 padding bytes after `a`, which are
+// uninit, therefore getting a slice that includes them is UB!
+let my_data_bytes: &[u8] = transmute(&my_data);
+
+// allocate an uninit buffer of some size
+let my_buffer: MyBufferType = some_api.alloc_buffer_size(2048);
+
+// 🚨 this is UB for the same reason, these bytes are uninit!
+let buffer_as_bytes: &mut [u8] =
+    slice::from_raw_parts(my_buffer.ptr(), my_buffer.size());
+
+// 🚨 this is UB because not only are both slices invalid,
+// this is not ensuring proper alignment!
+buffer_as_bytes.copy_from_slice(my_data_bytes);
+```
 
 `presser` helps with this by allowing you to view raw allocated memory of some size as a "`Slab`" of memory and then
-provides *safe, valid* ways to copy data into that memory.
+provides *safe, valid* ways to copy data into that memory:
+
+### A good example
+
+```rust
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct MyDataStruct {
+    a: u8,
+    b: u32,
+}
+
+let my_data = MyDataStruct { a: 0, b: 42 };
+
+// allocate an uninit buffer of some size
+let my_buffer: MyBufferType = some_api.alloc_buffer_size(2048);
+
+// use `RawAllocation` helper to allow access to a presser `Slab`.
+// alternatively, you could implement the `Slab` on your buffer type directly if that
+// type is owned by your code!
+let raw_allocation = presser::RawAllocation::from_raw_parts(my_buffer.ptr(), my_buffer.size());
+
+// here we assert that we have exclusive access to the data in the buffer, and get the actual
+// `Slab` to use to copy into.
+let slab = unsafe { raw_allocation.borrow_as_slab(); }
+
+// now we may safely copy `my_data` into `my_buffer`, starting at a minimum offset of 0 into the buffer
+let copy_record = presser::copy_to_offset(&my_data, &mut slab, 0)?;
+
+// note that due to alignment requirements of `my_data`, the *actual* start of the bytes of
+// `my_data` may be placed at a different offset than requested. so, we check the returned
+// `CopyRecord` to check the actual start offset of the copied data.
+let actual_start_offset = copy_record.copy_start_offset;
+```
+
+Note that actually accessing the copied data is a completely separate issue which `presser` does not
+(as of now) concern itself with. BE CAREFUL!
 
 See more in [the docs](https://docs.rs/presser).
 
