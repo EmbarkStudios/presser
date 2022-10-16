@@ -14,7 +14,7 @@
 [![Embark](https://img.shields.io/badge/discord-ark-%237289da.svg?logo=discord)](https://discord.gg/dAuKfZS)
 [![Crates.io](https://img.shields.io/crates/v/presser.svg)](https://crates.io/crates/presser)
 [![Published Docs](https://docs.rs/presser/badge.svg)](https://docs.rs/presser)
-[![Git Docs](https://docs.rs/presser/badge.svg)](https://embarkstudios.github.io/presser/presser/index.html)
+[![Git Docs](https://img.shields.io/badge/git%20main%20docs-published-blue?style=plastic)](https://embarkstudios.github.io/presser/presser/index.html)
 [![dependency status](https://deps.rs/repo/github/EmbarkStudios/presser/status.svg)](https://deps.rs/repo/github/EmbarkStudios/presser)
 </div>
 
