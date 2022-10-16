@@ -1,10 +1,10 @@
 //! # `🗜 presser`
-//! 
+//!
 //! **Utilities to help make copying data around into raw, possibly-uninitialized buffers
 //! easier and safer.**
 //!
 //! ## Motivation
-//! 
+//!
 //! `presser` can help you when copying data into raw buffers. One primary use-case is copying data into
 //! graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
 //! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing a GPU allocated
@@ -20,27 +20,27 @@
 //! [`copy_to_offset_with_align`] to copy any `T: Copy` data into that buffer safely for use on the GPU.
 //! Of course, if your `T` doesn't have the correct layout the GPU expects, accessing it on the GPU side may still be
 //! unsound or at least give an error.
-//! 
+//!
 //! ## Introduction
-//! 
+//!
 //! The main idea is to implement [`Slab`] on raw-buffer-esque-types (see [the `Slab` safety docs][Slab#Safety]),
 //! which then enables the use of the other functions within the crate.
-//! 
+//!
 //! Depending on your use case, you may be able to implement [`Slab`] directly for your buffer type, or it may
 //! be more convenient or necessary to create a wrapping struct that borrows your raw buffer type and in turn
 //! implements [`Slab`]. For an example of this, see [`RawAllocation`] and [`BorrowedRawAllocation`], which you
 //! may also use directly. The idea is to create a [`RawAllocation`] to your buffer, which you then borrow into
 //! a [`BorrowedRawAllocation`] (which implements [`Slab`]) by calling the unsafe function
 //! [`RawAllocation::borrow_as_slab`]
-//! 
+//!
 //! Once you have a slab, you can use the copy helper functions provided at the crate root, for example,
 //! [`copy_to_offset`] and [`copy_to_offset_with_align`].
 //!
 //! ### `#[no_std]`
-//! 
+//!
 //! This crate supports `no_std` environments by building without the '`std`' feature. This will limit some
 //! of the fuctions the crate can perform.
-//! 
+//!
 //! # Safety
 //!
 //! An important note is that obeying the safety rules specified in the [`Slab`] safety documentation
