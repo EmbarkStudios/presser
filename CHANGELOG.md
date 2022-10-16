@@ -10,30 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
 
-## [0.1.1] - 2019-09-03
-### Added
-- New features go here in a bullet list
+- Open source repository
+- Support `#[no_std]` via optional `std` feature
+- Improve/revamp some documentation
 
-### Changed
-- Changes to existing functionality go here in a bullet list
+## v0.2.1
 
-### Deprecated
-- Mark features soon-to-be removed in a bullet list
+- Re-word crate-level safety documentation
 
-### Removed
-- Features that have been removed in a bullet list
+## v0.2.0
 
-### Fixed
-- Bug fixes in a bullet list
+- Require Rust 1.64
+- Added `copy_into_maybe_uninit_slice`
+- Added `clone_into_maybe_uninit_slice`
+- Remove optional `gpu-allocator` feature and support
 
-### Security
-- Changes/fixes related to security vulnerabilities in a bullet list
+## v0.1.1
 
-## [0.1.0] - 2019-09-02
-### Added
-- Initial add of the thing
+- Added `maybe_uninit_slice_from_vec` helper function
 
 <!-- next-url -->
-[Unreleased]: https://github.com/EmbarkStudios/$REPO_NAME/compare/0.1.1...HEAD
-[0.1.1]: https://github.com/EmbarkStudios/$REPO_NAME/compare/0.1.0...0.1.1
-[0.1.0]: https://github.com/EmbarkStudios/$REPO_NAME/releases/tag/0.1.0
+[Unreleased]: https://github.com/EmbarkStudios/presser/compare/0.2.1...HEAD

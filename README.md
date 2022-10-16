@@ -6,31 +6,31 @@
 
 <div align="center">
 
-<!--- FIXME: Pick an emoji and name your project! --->
-# `🌻 opensource-template`
+# `🗜 presser`
 
-<!--- FIXME: Write short catchy description/tagline of project --->
-**Template for creating new open source repositories that follow the Embark open source guidelines**
-
-<!--- FIXME: Update crate, repo and CI workflow names here! Remove any that are not relevant --->
+**Utilities to help make copying data around into raw, possibly-uninitialized buffers easier and safer.**
 
 [![Embark](https://img.shields.io/badge/embark-open%20source-blueviolet.svg)](https://embark.dev)
 [![Embark](https://img.shields.io/badge/discord-ark-%237289da.svg?logo=discord)](https://discord.gg/dAuKfZS)
-[![Crates.io](https://img.shields.io/crates/v/rust-gpu.svg)](https://crates.io/crates/rust-gpu)
-[![Docs](https://docs.rs/rust-gpu/badge.svg)](https://docs.rs/rust-gpu)
-[![dependency status](https://deps.rs/repo/github/EmbarkStudios/rust-gpu/status.svg)](https://deps.rs/repo/github/EmbarkStudios/rust-gpu)
-[![Build status](https://github.com/EmbarkStudios/physx-rs/workflows/CI/badge.svg)](https://github.com/EmbarkStudios/physx-rs/actions)
+[![Crates.io](https://img.shields.io/crates/v/presser.svg)](https://crates.io/crates/presser)
+[![Published Docs](https://docs.rs/presser/badge.svg)](https://docs.rs/presser)
+[![Git Docs](https://docs.rs/presser/badge.svg)](https://embark-studios.github.io/presser/presser/index.html)
+[![dependency status](https://deps.rs/repo/github/EmbarkStudios/presser/status.svg)](https://deps.rs/repo/github/EmbarkStudios/presser)
 </div>
 
-## TEMPLATE INSTRUCTIONS
+`presser` can help you when copying data into raw buffers. One primary use-case is copying data into
+graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
+right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing a GPU allocated
+but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**, and `transmute`ing even a
+`T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
+**also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
+value (and uninitialized memory is an invalid `u8`), *even if* your code never actually accesses that memory.
+This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬.
 
-1. Create a new repository under EmbarkStudios using this template.
-1. **Title:** Change the first line of this README to the name of your project, and replace the sunflower with an emoji that represents your project. 🚨 Your emoji selection is critical.
-1. **Badges:** In the badges section above, change the repo name in each URL. If you are creating something other than a Rust crate, remove the crates.io and docs badges (and feel free to add more appropriate ones for your language).
-1. **CI:** In `./github/workflows/` rename `rust-ci.yml` (or the appropriate config for your language) to `ci.yml`. And go over it and adapt it to work for your project
-1. **CHANGELOG.md:** Change the `$REPO_NAME` in the links at the bottom to the name of the repository, and replace the example template lines with the actual notes for the repository/crate.
-1. **release.toml:** in `./release.toml` change the `$REPO_NAME` to the name of the repository
-1. **Cleanup:** Remove this section of the README and any unused files (such as configs for other languages) from the repo.
+`presser` helps with this by allowing you to view raw allocated memory of some size as a "`Slab`" of memory and then
+provides *safe, valid* ways to copy data into that memory.
+
+See more in [the docs](https://docs.rs/presser).
 
 ## Contribution
 

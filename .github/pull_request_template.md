@@ -1,3 +1,5 @@
+<!-- markdownlint-disable first-line-h1 -->
+
 ### Checklist
 
 * [ ] I have read the [Contributor Guide](../../CONTRIBUTING.md)
