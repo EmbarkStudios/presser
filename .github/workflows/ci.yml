@@ -33,6 +33,7 @@ jobs:
         run: |
           rustup component add clippy
           cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --all-targets --no-default-features -- -D warnings
 
   test:
     name: Build & Test
@@ -53,12 +54,44 @@ jobs:
         run: cargo build --tests
       - name: cargo test
         run: cargo test
+      - name: cargo build `no_std`
+        run: cargo build --no-default-features
+      - name: cargo test build `no_std`
+        run: cargo build --no-default-features --tests
+      - name: cargo test build `no_std`
+        run: cargo test --no-default-features
+
+  test-nightly:
+    name: Build & Test Nightly
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - run: cargo fetch
+      - name: cargo build
+        run: cargo build
+      - name: cargo test build
+        run: cargo build --tests
+      - name: cargo test
+        run: cargo test
+      - name: cargo build `no_std`
+        run: cargo build --no-default-features
+      - name: cargo test build `no_std`
+        run: cargo build --no-default-features --tests
+      - name: cargo test build `no_std`
+        run: cargo test --no-default-features
 
   publish-check:
     name: Publish Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
