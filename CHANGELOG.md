@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
+## [0.3.1] - 2022-10-16
 
 - Small documentation fixes
 - Add example to docs
@@ -35,4 +36,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `maybe_uninit_slice_from_vec` helper function
 
 <!-- next-url -->
-[Unreleased]: https://github.com/EmbarkStudios/presser/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/EmbarkStudios/presser/compare/0.3.1...HEAD
+[0.3.1]: https://github.com/EmbarkStudios/presser/compare/0.3.0...0.3.1
