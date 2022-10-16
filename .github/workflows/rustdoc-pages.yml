@@ -22,7 +22,7 @@ jobs:
         toolchain: nightly
         override: true
     - name: Build Docs
-      run: RUSTDOCFLAGS="--cfg docs_build" cargo doc --cfg 
+      run: RUSTDOCFLAGS="--cfg docs_build" cargo doc
     - name: Setup Pages
       id: pages
       uses: actions/configure-pages@v2
