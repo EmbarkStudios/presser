@@ -94,7 +94,8 @@ let actual_start_offset = copy_record.copy_start_offset;
 Note that actually accessing the copied data is a completely separate issue which `presser` does not
 (as of now) concern itself with. BE CAREFUL!
 
-See more in [the docs](https://docs.rs/presser).
+See more in [the git `main` docs](https://embarkstudios.github.io/presser/presser/index.html)
+or [the released version docs](https://docs.rs/presser).
 
 ## Contribution
 
