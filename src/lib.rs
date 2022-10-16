@@ -20,7 +20,7 @@
 //! [`copy_to_offset_with_align`] to copy any `T: Copy` data into that buffer safely for use on the GPU.
 //! Of course, if your `T` doesn't have the correct layout the GPU expects, accessing it on the GPU side may still be
 //! unsound or at least give an error.
-//! 
+//!
 //! \* *If you're currently thinking to yourself "bah! what's the issue? surely an uninit u8 is just any random bit pattern
 //! and that's fine we don't care," [check out this blog post](https://www.ralfj.de/blog/2019/07/14/uninit.html) by
 //! @RalfJung, one of the people leading the effort to better define Rust's memory and execution model. As is explored
@@ -29,7 +29,7 @@
 //! delete, and otherwise change the actual execution flow of your program in ways that cannot be described simply
 //! by "the value could have *some* possible bit pattern". LLVM and Clang are changing themselves to require special
 //! `noundef` attribute to perform many important optimizations that are otherwise unsound. For a concrete example
-//! of the sorts of problems this can cause, 
+//! of the sorts of problems this can cause,
 //! [see this issue @scottmcm hit](https://github.com/rust-lang/rust/pull/98919#issuecomment-1186106387).*
 //!
 //! ## Introduction
@@ -46,9 +46,9 @@
 //!
 //! Once you have a slab, you can use the copy helper functions provided at the crate root, for example,
 //! [`copy_to_offset`] and [`copy_to_offset_with_align`].
-//! 
+//!
 //! ### Example
-//! 
+//!
 //! ```rust,ignore
 //! #[derive(Clone, Copy)]
 //! #[repr(C)]
