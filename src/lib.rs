@@ -8,7 +8,7 @@
 //! `presser` can help you when copying data into raw buffers. One primary use-case is copying data into
 //! graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
 //! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing an allocated
-//! but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**, and `transmute`ing even a
+//! but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**\*, and `transmute`ing even a
 //! `T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
 //! **also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
 //! value (and uninitialized memory is an invalid `u8`), *even if* your code never actually accesses that memory.
@@ -20,6 +20,17 @@
 //! [`copy_to_offset_with_align`] to copy any `T: Copy` data into that buffer safely for use on the GPU.
 //! Of course, if your `T` doesn't have the correct layout the GPU expects, accessing it on the GPU side may still be
 //! unsound or at least give an error.
+//! 
+//! \* *If you're currently thinking to yourself "bah! what's the issue? surely an uninit u8 is just any random bit pattern
+//! and that's fine we don't care," [check out this blog post](https://www.ralfj.de/blog/2019/07/14/uninit.html) by
+//! @RalfJung, one of the people leading the effort to better define Rust's memory and execution model. As is explored
+//! in that blog post, an *uninit* piece of memory is not simply *an arbitrary bit pattern*, it is a wholly separate
+//! state about a piece of memory, outside of its value, which lets the compiler perform optimizations that reorder,
+//! delete, and otherwise change the actual execution flow of your program in ways that cannot be described simply
+//! by "the value could have *some* possible bit pattern". LLVM and Clang are changing themselves to require special
+//! `noundef` attribute to perform many important optimizations that are otherwise unsound. For a concrete example
+//! of the sorts of problems this can cause, 
+//! [see this issue @scottmcm hit](https://github.com/rust-lang/rust/pull/98919#issuecomment-1186106387).*
 //!
 //! ## Introduction
 //!
@@ -35,6 +46,39 @@
 //!
 //! Once you have a slab, you can use the copy helper functions provided at the crate root, for example,
 //! [`copy_to_offset`] and [`copy_to_offset_with_align`].
+//! 
+//! ### Example
+//! 
+//! ```rust,ignore
+//! #[derive(Clone, Copy)]
+//! #[repr(C)]
+//! struct MyDataStruct {
+//!     a: u8,
+//!     b: u32,
+//! }
+//!
+//! let my_data = MyDataStruct { a: 0, b: 42 };
+//!
+//! // allocate an uninit buffer of some size
+//! let my_buffer: MyBufferType = some_api.alloc_buffer_size(2048);
+//!
+//! // use `RawAllocation` helper to allow access to a presser `Slab`.
+//! // alternatively, you could implement the `Slab` on `MyByfferType` directly if that
+//! // type is owned by your code!
+//! let raw_allocation = presser::RawAllocation::from_raw_parts(my_buffer.ptr(), my_buffer.size());
+//!
+//! // here we assert that we have exclusive access to the data in the buffer, and get the actual
+//! // `Slab` to use to copy into.
+//! let slab = unsafe { raw_allocation.borrow_as_slab(); }
+//!
+//! // now we may safely copy `my_data` into `my_buffer`, starting at a minimum offset of 0 into the buffer
+//! let copy_record = presser::copy_to_offset(&my_data, &mut slab, 0)?;
+//!
+//! // note that due to alignment requirements of `my_data`, the *actual* start of the bytes of
+//! // `my_data` may be placed at a different offset than requested. so, we check the returned
+//! // `CopyRecord` to check the actual start offset of the copied data.
+//! let actual_start_offset = copy_record.copy_start_offset;
+//! ```
 //!
 //! ### `#[no_std]`
 //!
