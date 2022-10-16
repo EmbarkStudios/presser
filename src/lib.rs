@@ -7,7 +7,7 @@
 //!
 //! `presser` can help you when copying data into raw buffers. One primary use-case is copying data into
 //! graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
-//! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing a GPU allocated
+//! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing an allocated
 //! but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**, and `transmute`ing even a
 //! `T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
 //! **also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
