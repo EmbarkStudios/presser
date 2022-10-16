@@ -534,7 +534,7 @@ pub struct CopyRecord {
 /// Copies `src` into the memory represented by `dst` starting at a minimum location
 /// of `start_offset` bytes past the start of `dst`.
 ///
-/// - `start_offset` is the offset into the allocation represented by `self`,
+/// - `start_offset` is the offset into the allocation represented by `dst`,
 /// in bytes, before which any copied data will *certainly not* be placed. However,
 /// the actual beginning of the copied data may not be exactly at `start_offset` if
 /// padding bytes are needed to satisfy alignment requirements. The actual beginning
@@ -558,7 +558,7 @@ pub fn copy_to_offset<T: Copy, S: Slab>(
 /// of `start_offset` bytes past the start of `dst` and with minimum alignment
 /// `min_alignment`.
 ///
-/// - `start_offset` is the offset into the allocation represented by `self`,
+/// - `start_offset` is the offset into the allocation represented by `dst`,
 /// in bytes, before which any copied data will *certainly not* be placed. However,
 /// the actual beginning of the copied data may not be exactly at `start_offset` if
 /// padding bytes are needed to satisfy alignment requirements. The actual beginning
@@ -600,10 +600,10 @@ pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
     Ok(record)
 }
 
-/// Copies from `slice` into the memory represented by `self` starting at a minimum location
+/// Copies from `slice` into the memory represented by `dst` starting at a minimum location
 /// of `start_offset` bytes past the start of `self`.
 ///
-/// - `start_offset` is the offset into the allocation represented by `self`,
+/// - `start_offset` is the offset into the allocation represented by `dst`,
 /// in bytes, before which any copied data will *certainly not* be placed. However,
 /// the actual beginning of the copied data may not be exactly at `start_offset` if
 /// padding bytes are needed to satisfy alignment requirements. The actual beginning
@@ -623,10 +623,10 @@ pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
     copy_from_slice_to_offset_with_align(src, dst, start_offset, 1)
 }
 
-/// Copies from `slice` into the memory represented by `self` starting at a minimum location
-/// of `start_offset` bytes past the start of `self`.
+/// Copies from `slice` into the memory represented by `dst` starting at a minimum location
+/// of `start_offset` bytes past the start of `dst`.
 ///
-/// - `start_offset` is the offset into the allocation represented by `self`,
+/// - `start_offset` is the offset into the allocation represented by `dst`,
 /// in bytes, before which any copied data will *certainly not* be placed. However,
 /// the actual beginning of the copied data may not be exactly at `start_offset` if
 /// padding bytes are needed to satisfy alignment requirements. The actual beginning
