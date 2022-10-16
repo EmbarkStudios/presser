@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 edition = "2021"
 rust-version = "1.64"
 description = "A crate to help you copy things into raw buffers without invoking spooky action at a distance (undefined behavior)."
-keywords = ["copy", "gpu", "graphics", "raw", "unsafe", "buffer", "memory"]
+keywords = ["copy", "graphics", "raw", "buffer", "memory"]
 categories = ["games", "memory", "graphics"]
 publish = true
 
