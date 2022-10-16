@@ -10,6 +10,7 @@ env:
 
 jobs:
   build:
+    name: Build Docs
 
     runs-on: ubuntu-latest
 
@@ -33,6 +34,7 @@ jobs:
         path: './target/doc'
 
   deploy:
+    name: Deploy to Pages
   
     needs: build
     
