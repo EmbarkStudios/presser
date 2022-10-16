@@ -10,7 +10,7 @@ edition = "2021"
 rust-version = "1.64"
 description = "A crate to help you copy things into raw buffers without invoking spooky action at a distance (undefined behavior)."
 keywords = ["copy", "graphics", "raw", "buffer", "memory"]
-categories = ["games", "memory", "graphics"]
+categories = ["games", "memory-management", "graphics"]
 publish = true
 
 [lib]
