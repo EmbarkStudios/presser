@@ -538,7 +538,7 @@ pub(crate) struct ComputedOffsets {
 }
 
 /// Compute and validate offsets for a copy or read operation with the given parameters.
-pub(crate) fn compute_offsets<S: Slab>(
+pub(crate) fn compute_and_validate_offsets<S: Slab>(
     slab: &S,
     start_offset: usize,
     t_layout: Layout,

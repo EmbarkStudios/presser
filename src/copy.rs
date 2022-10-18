@@ -88,7 +88,7 @@ pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, Error> {
     let t_layout = Layout::new::<T>();
-    let offsets = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
+    let offsets = compute_and_validate_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(offsets.start) }.cast::<T>();
@@ -158,7 +158,7 @@ pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, Error> {
     let t_layout = Layout::new::<T>();
-    let offsets = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
+    let offsets = compute_and_validate_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(offsets.start) }.cast::<T>();
@@ -227,7 +227,7 @@ pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, Error> {
     let t_layout = Layout::for_value(src);
-    let offsets = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
+    let offsets = compute_and_validate_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(offsets.start) }.cast::<T>();
@@ -298,7 +298,7 @@ pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, Error> {
     let t_layout = Layout::for_value(src);
-    let offsets = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
+    let offsets = compute_and_validate_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(offsets.start) }.cast::<T>();

@@ -17,7 +17,7 @@ use super::*;
 #[inline]
 pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Result<&'a T, Error> {
     let t_layout = Layout::new::<T>();
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr().add(offsets.start) }.cast::<T>();
@@ -50,7 +50,7 @@ pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Resu
 #[inline]
 pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize) -> Result<&'a mut T, Error> {
     let t_layout = Layout::new::<T>();
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<T>();
@@ -82,7 +82,7 @@ pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize)
 #[inline]
 pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize) -> Result<&'a mut MaybeUninit<T>, Error> {
     let t_layout = Layout::new::<T>();
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<MaybeUninit<T>>();
@@ -116,7 +116,7 @@ pub unsafe fn read_slice_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize, l
         Ok(layout) => layout,
         Err(_) => return Err(Error::InvalidLayout),
     };
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr().add(offsets.start) }.cast::<T>();
@@ -153,7 +153,7 @@ pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: 
         Ok(layout) => layout,
         Err(_) => return Err(Error::InvalidLayout),
     };
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<T>();
@@ -189,7 +189,7 @@ pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, off
         Ok(layout) => layout,
         Err(_) => return Err(Error::InvalidLayout),
     };
-    let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
+    let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<MaybeUninit<T>>();
