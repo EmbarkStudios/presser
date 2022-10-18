@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
+
+- Add `[]_exact` versions of copy functions which ensure that the copy will actually start at the
+provided start_offset, otherwise returning an error.
+- Add `CopyError::RequestedOffsetUnaligned` to support the above error case.
+
 ## [0.3.1] - 2022-10-16
 
 - Small documentation fixes
