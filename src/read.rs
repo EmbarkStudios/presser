@@ -1,3 +1,5 @@
+#![allow(clippy::needless_lifetimes)] // important to be explicit here imo
+
 use super::*;
 
 /// Gets a shared reference to a `T` within `slab` at `offset`.
