@@ -583,7 +583,7 @@ pub struct CopyRecord {
     pub copy_end_offset_padded: usize,
 }
 
-/// Copies `src` into the memory represented by `dst` starting at a *exactly*
+/// Copies `src` into the memory represented by `dst` starting at *exactly*
 /// `start_offset` bytes past the start of `dst`
 ///
 /// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
