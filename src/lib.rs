@@ -491,12 +491,16 @@ fn compute_offsets<S: Slab>(
     start_offset: usize,
     t_layout: Layout,
     min_alignment: usize,
+    require_exact_start_offset: bool,
 ) -> Result<CopyRecord, CopyError> {
     let copy_layout = t_layout.align_to(min_alignment.next_power_of_two())?;
 
     let copy_start_offset =
         align_offset_up_to(dst.base_ptr() as usize, start_offset, copy_layout.align())
             .ok_or(CopyError::InvalidLayout)?;
+    if require_exact_start_offset && start_offset != copy_start_offset {
+        return Err(CopyError::RequestedOffsetUnaligned);
+    }
     let copy_end_offset = copy_start_offset
         .checked_add(copy_layout.size())
         .ok_or(CopyError::InvalidLayout)?;
@@ -531,6 +535,9 @@ pub enum CopyError {
     OffsetOutOfBounds,
     /// Computed invalid layout for copy operation, probably caused by incredibly large size, offset, or min-alignment parameters
     InvalidLayout,
+    /// In an `exact` variant copy function, the computed copy start offset did not match the requested start offset,
+    /// meaning the requested start offset was not properly aligned
+    RequestedOffsetUnaligned,
 }
 
 impl core::fmt::Display for CopyError {
@@ -539,6 +546,7 @@ impl core::fmt::Display for CopyError {
             Self::OutOfMemory => "Copy would exceed the end of the allocation",
             Self::OffsetOutOfBounds => "Requested copy to a location starting outside the allocation",
             Self::InvalidLayout => "Invalid layout, probably caused by incredibly large size, offset, or alignment parameters",
+            Self::RequestedOffsetUnaligned => "Requested start_offset did not satisfy computed alignment requirements",
         })
     }
 }
@@ -575,6 +583,74 @@ pub struct CopyRecord {
     pub copy_end_offset_padded: usize,
 }
 
+/// Copies `src` into the memory represented by `dst` starting at *exactly*
+/// `start_offset` bytes past the start of `dst`
+///
+/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
+/// where the first byte of the copied data will be placed. If the requested
+/// start offset does not satisfy computed alignment requirements, an error will
+/// be returned and no data will be copied.
+///
+/// # Safety
+///
+/// This function is safe on its own, however it is very possible to do unsafe
+/// things if you read the copied data in the wrong way. See the
+/// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
+pub fn copy_to_offset_exact<T: Copy, S: Slab>(
+    src: &T,
+    dst: &mut S,
+    start_offset: usize,
+) -> Result<CopyRecord, CopyError> {
+    copy_to_offset_with_align_exact(src, dst, start_offset, 1)
+}
+
+/// Copies `src` into the memory represented by `dst` starting at *exactly*
+/// `start_offset` bytes past the start of `dst` and with minimum alignment
+/// `min_alignment`.
+///
+/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
+/// where the first byte of the copied data will be placed. If the requested
+/// start offset does not satisfy computed alignment requirements, an error will
+/// be returned and no data will be copied.
+/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
+/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
+/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
+///
+/// # Safety
+///
+/// This function is safe on its own, however it is very possible to do unsafe
+/// things if you read the copied data in the wrong way. See the
+/// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
+pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab>(
+    src: &T,
+    dst: &mut S,
+    start_offset: usize,
+    min_alignment: usize,
+) -> Result<CopyRecord, CopyError> {
+    let t_layout = Layout::new::<T>();
+    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
+
+    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
+    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
+
+    // SAFETY:
+    // - src is valid as we have a reference to it
+    // - dst is valid so long as requirements for `slab` were met, i.e.
+    // we have unique access to the region described and that it is valid for the duration
+    // of 'a.
+    // - areas not overlapping as long as safety requirements of creation of `self` were met,
+    // i.e. that we have exclusive access to the region of memory described.
+    // - dst aligned at least to align_of::<T>()
+    // - checked that copy stays within bounds of our allocation
+    unsafe {
+        core::ptr::copy_nonoverlapping(src as *const T, dst_ptr, 1);
+    }
+
+    Ok(record)
+}
+
 /// Copies `src` into the memory represented by `dst` starting at a minimum location
 /// of `start_offset` bytes past the start of `dst`.
 ///
@@ -609,13 +685,14 @@ pub fn copy_to_offset<T: Copy, S: Slab>(
 /// of the copied bytes is contained in the returned [`CopyRecord`].
 /// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
 /// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T`.
+/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
 ///
 /// # Safety
 ///
 /// This function is safe on its own, however it is very possible to do unsafe
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
 pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
     src: &T,
     dst: &mut S,
@@ -623,7 +700,7 @@ pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, CopyError> {
     let t_layout = Layout::new::<T>();
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment)?;
+    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
@@ -639,6 +716,75 @@ pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
     // - checked that copy stays within bounds of our allocation
     unsafe {
         core::ptr::copy_nonoverlapping(src as *const T, dst_ptr, 1);
+    }
+
+    Ok(record)
+}
+
+/// Copies from `slice` into the memory represented by `dst` starting at *exactly*
+/// `start_offset` bytes past the start of `self`.
+///
+/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
+/// where the first byte of the copied data will be placed. If the requested
+/// start offset does not satisfy computed alignment requirements, an error will
+/// be returned and no data will be copied.
+///
+/// # Safety
+///
+/// This function is safe on its own, however it is very possible to do unsafe
+/// things if you read the copied data in the wrong way. See the
+/// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
+pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab>(
+    src: &[T],
+    dst: &mut S,
+    start_offset: usize,
+) -> Result<CopyRecord, CopyError> {
+    copy_from_slice_to_offset_with_align(src, dst, start_offset, 1)
+}
+
+/// Copies from `slice` into the memory represented by `dst` starting at *exactly*
+/// `start_offset` bytes past the start of `dst` and with minimum alignment `min_alignment`.
+///
+/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
+/// where the first byte of the copied data will be placed. If the requested
+/// start offset does not satisfy computed alignment requirements, an error will
+/// be returned and no data will be copied.
+/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
+/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
+/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
+///     - The whole data of the slice will be copied directly, so, alignment between elements
+/// ignores `min_alignment`.
+///
+/// # Safety
+///
+/// This function is safe on its own, however it is very possible to do unsafe
+/// things if you read the copied data in the wrong way. See the
+/// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
+pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab>(
+    src: &[T],
+    dst: &mut S,
+    start_offset: usize,
+    min_alignment: usize,
+) -> Result<CopyRecord, CopyError> {
+    let t_layout = Layout::for_value(src);
+    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
+
+    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
+    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
+
+    // SAFETY:
+    // - src is valid as we have a reference to it
+    // - dst is valid so long as requirements for `slab` were met, i.e.
+    // we have unique access to the region described and that it is valid for the duration
+    // of 'a.
+    // - areas not overlapping as long as safety requirements of creation of `self` were met,
+    // i.e. that we have exclusive access to the region of memory described.
+    // - dst aligned at least to align_of::<T>()
+    // - checked that copy stays within bounds of our allocation
+    unsafe {
+        core::ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, src.len());
     }
 
     Ok(record)
@@ -677,7 +823,7 @@ pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
 /// of the copied bytes is contained in the returned [`CopyRecord`].
 /// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
 /// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` and the underlying allocation.
+/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
 ///     - The whole data of the slice will be copied directly, so, alignment between elements
 /// ignores `min_alignment`.
 ///
@@ -686,6 +832,7 @@ pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
 /// This function is safe on its own, however it is very possible to do unsafe
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
+#[inline]
 pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
     src: &[T],
     dst: &mut S,
@@ -693,7 +840,7 @@ pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
     min_alignment: usize,
 ) -> Result<CopyRecord, CopyError> {
     let t_layout = Layout::for_value(src);
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment)?;
+    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
 
     // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
     let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
@@ -726,10 +873,10 @@ pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
 /// of the copied bytes is contained in the returned [`CopyRecord`]s.
 /// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
 /// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T`.
+/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
 /// - For this variation, `min_alignment` will also be respected *between* elements yielded by
-/// the iterator. To copy inner elements aligned only to `align_of::<T>()`, see
-/// [`copy_from_iter_to_offset_with_align_packed`]
+/// the iterator. To copy inner elements aligned only to `align_of::<T>()` (i.e. with the layout of
+/// an `[T]`), see [`copy_from_iter_to_offset_with_align_packed`].
 ///
 /// # Safety
 ///
@@ -737,6 +884,7 @@ pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[cfg(feature = "std")]
+#[inline]
 pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
     src: Iter,
     dst: &mut S,
@@ -759,6 +907,7 @@ pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S:
 ///
 /// Because of this, only one [`CopyRecord`] is returned specifying the record of the
 /// entire block of copied data. If the `src` iterator is empty, returns `None`.
+#[inline]
 pub fn copy_from_iter_to_offset_with_align_packed<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
     mut src: Iter,
     dst: &mut S,
@@ -775,6 +924,41 @@ pub fn copy_from_iter_to_offset_with_align_packed<T: Copy, Iter: Iterator<Item =
 
     for item in src {
         let copy_record = copy_to_offset_with_align(&item, dst, prev_record.copy_end_offset, 1)?;
+        prev_record = copy_record;
+    }
+
+    Ok(Some(CopyRecord {
+        copy_start_offset: first_record.copy_start_offset,
+        copy_end_offset: prev_record.copy_end_offset,
+        copy_end_offset_padded: prev_record.copy_end_offset_padded,
+    }))
+}
+
+/// Like [`copy_from_iter_to_offset_with_align_packed`] except that it will return an error
+/// and no data will be copied if the supplied `start_offset` doesn't meet the computed alignment
+/// requirements.
+#[inline]
+pub fn copy_from_iter_to_offset_with_align_exact_packed<
+    T: Copy,
+    Iter: Iterator<Item = T>,
+    S: Slab,
+>(
+    mut src: Iter,
+    dst: &mut S,
+    start_offset: usize,
+    min_alignment: usize,
+) -> Result<Option<CopyRecord>, CopyError> {
+    let first_record = if let Some(first_item) = src.next() {
+        copy_to_offset_with_align_exact(&first_item, dst, start_offset, min_alignment)?
+    } else {
+        return Ok(None);
+    };
+
+    let mut prev_record = first_record;
+
+    for item in src {
+        let copy_record =
+            copy_to_offset_with_align_exact(&item, dst, prev_record.copy_end_offset, 1)?;
         prev_record = copy_record;
     }
 
