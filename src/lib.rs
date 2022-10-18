@@ -12,7 +12,7 @@
 //! `T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
 //! **also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
 //! value (and uninitialized memory is an invalid `u8`), *even if* your code never actually accesses that memory.
-//! This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬.
+//! This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬
 //!
 //! `presser` helps with this by allowing you to view raw allocated memory of some size as a "[`Slab`]" of memory and then
 //! provides *safe, valid* ways to copy data into that memory. For example, you could implement [`Slab`] for your
@@ -24,10 +24,10 @@
 //! \* *If you're currently thinking to yourself "bah! what's the issue? surely an uninit u8 is just any random bit pattern
 //! and that's fine we don't care," [check out this blog post](https://www.ralfj.de/blog/2019/07/14/uninit.html) by
 //! @RalfJung, one of the people leading the effort to better define Rust's memory and execution model. As is explored
-//! in that blog post, an *uninit* piece of memory is not simply *an arbitrary bit pattern*, it is a wholly separate
+//! in that blog post, an* uninit *piece of memory is not simply* an arbitrary bit pattern, *it is a wholly separate
 //! state about a piece of memory, outside of its value, which lets the compiler perform optimizations that reorder,
 //! delete, and otherwise change the actual execution flow of your program in ways that cannot be described simply
-//! by "the value could have *some* possible bit pattern". LLVM and Clang are changing themselves to require special
+//! by "the value could have* some *possible bit pattern". LLVM and Clang are changing themselves to require special
 //! `noundef` attribute to perform many important optimizations that are otherwise unsound. For a concrete example
 //! of the sorts of problems this can cause,
 //! [see this issue @scottmcm hit](https://github.com/rust-lang/rust/pull/98919#issuecomment-1186106387).*
