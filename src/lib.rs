@@ -5,7 +5,7 @@
 //!
 //! ## Motivation
 //!
-//! `presser` can help you when copying data into raw buffers. One primary use-case is copying data into
+//! `presser` can help you when copying data into and reading data out of raw buffers. One primary use-case is copying data into
 //! graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
 //! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing an allocated
 //! but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**\*, and `transmute`ing even a
@@ -44,7 +44,7 @@
 //! a [`BorrowedRawAllocation`] (which implements [`Slab`]) by calling the unsafe function
 //! [`RawAllocation::borrow_as_slab`]
 //!
-//! Once you have a slab, you can use the copy helper functions provided at the crate root, for example,
+//! Once you have a slab, you can use the helper functions provided at the crate root, for example,
 //! [`copy_to_offset`] and [`copy_to_offset_with_align`].
 //!
 //! ### Example
@@ -78,6 +78,13 @@
 //! // `my_data` may be placed at a different offset than requested. so, we check the returned
 //! // `CopyRecord` to check the actual start offset of the copied data.
 //! let actual_start_offset = copy_record.copy_start_offset;
+//! 
+//! // we may later (*unsafely*) read back our data. note that the read helpers provided by presser
+//! // are mostly unsafe. They do help protect you from some common footguns, but you still ultimately need
+//! // to guarantee you put the proper data where you're telling it you put the proper data.
+//! let my_copied_data_in_my_buffer: &MyDataStruct = unsafe { 
+//!     presser::read_at_offset(&slab, actual_start_offset)?
+//! };
 //! ```
 //!
 //! ### `#[no_std]`
@@ -94,13 +101,16 @@
 //! using same backing memory that the [`Slab`] you copied into used are still safe.
 //!
 //! For example, say you have a fully-initialized
-//! chunk of bytes (like a `Vec<u8>`), which you view as a [`Slab`], and then (safely) perform a copy
+//! chunk of bytes (like a `Vec<u8>`), which you (unsafely\*) view as a [`Slab`], and then (safely) perform a copy
 //! operation into using [`copy_to_offset`]. If the `T` you copied into it has any padding bytes in
 //! its memory layout, then the memory locations where those padding bytes now exist in the underlying `Vec`'s
 //! memory must now be treated as uninitialized. As such, taking any view into that byte vector which
 //! relies on those newly-uninit bytes being initialized to be valid (for example, taking a `&[u8]` slice of the `Vec`
 //! which includes those bytes, ***even if your code never actually reads from that slice***)
 //! is now instant **undefined behavior**.
+//! 
+//! \* *Note: this is unsafe because, as exemplified, you may copy uninit data into the buffer. Hence, care should
+//! be taken when implementing [`Slab`] and then providing a safe interface on top of a low level buffer type.*
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(missing_docs)]

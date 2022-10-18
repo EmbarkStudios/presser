@@ -80,7 +80,7 @@ pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize)
 /// Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub fn read_maybe_uninit_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize) -> Result<&'a mut MaybeUninit<T>, Error> {
+pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize) -> Result<&'a mut MaybeUninit<T>, Error> {
     let t_layout = Layout::new::<T>();
     let offsets = compute_offsets(slab, offset, t_layout, 1, true)?;
 
@@ -184,7 +184,7 @@ pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: 
 /// Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub fn read_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize, len: usize) -> Result<&'a mut [MaybeUninit<T>], Error> {
+pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(slab: &'a mut S, offset: usize, len: usize) -> Result<&'a mut [MaybeUninit<T>], Error> {
     let t_layout = match Layout::array::<T>(len) {
         Ok(layout) => layout,
         Err(_) => return Err(Error::InvalidLayout),
