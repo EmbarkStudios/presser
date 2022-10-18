@@ -78,11 +78,11 @@
 //! // `my_data` may be placed at a different offset than requested. so, we check the returned
 //! // `CopyRecord` to check the actual start offset of the copied data.
 //! let actual_start_offset = copy_record.copy_start_offset;
-//! 
+//!
 //! // we may later (*unsafely*) read back our data. note that the read helpers provided by presser
 //! // are mostly unsafe. They do help protect you from some common footguns, but you still ultimately need
 //! // to guarantee you put the proper data where you're telling it you put the proper data.
-//! let my_copied_data_in_my_buffer: &MyDataStruct = unsafe { 
+//! let my_copied_data_in_my_buffer: &MyDataStruct = unsafe {
 //!     presser::read_at_offset(&slab, actual_start_offset)?
 //! };
 //! ```
@@ -108,7 +108,7 @@
 //! relies on those newly-uninit bytes being initialized to be valid (for example, taking a `&[u8]` slice of the `Vec`
 //! which includes those bytes, ***even if your code never actually reads from that slice***)
 //! is now instant **undefined behavior**.
-//! 
+//!
 //! \* *Note: this is unsafe because, as exemplified, you may copy uninit data into the buffer. Hence, care should
 //! be taken when implementing [`Slab`] and then providing a safe interface on top of a low level buffer type.*
 #![cfg_attr(not(feature = "std"), no_std)]
