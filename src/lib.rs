@@ -743,8 +743,8 @@ pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab>(
     copy_from_slice_to_offset_with_align(src, dst, start_offset, 1)
 }
 
-/// Copies from `slice` into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `dst`.
+/// Copies from `slice` into the memory represented by `dst` starting at *exactly*
+/// `start_offset` bytes past the start of `dst` and with minimum alignment `min_alignment`.
 ///
 /// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
 /// where the first byte of the copied data will be placed. If the requested
