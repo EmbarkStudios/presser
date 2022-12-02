@@ -131,6 +131,8 @@ use core::ptr::NonNull;
 ///
 /// - The memory range represented by `base_ptr` and `size` **may** be wholly or partially uninitialized
 /// - `base_ptr` **must** point to a valid, single allocation of at least `size` bytes.
+///     - Thus, `size` must return a size that, when added to `base_ptr`, stays within
+/// that single valid allocation.
 /// - `size` **must not** be greater than `isize::MAX`
 ///
 /// Assume the lifetime of a shared borrow of self is named `'a`:
