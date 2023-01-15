@@ -86,11 +86,11 @@ let my_buffer: MyBufferType = some_api.alloc_buffer_size(2048);
 // use `RawAllocation` helper to allow access to a presser `Slab`.
 // alternatively, you could implement the `Slab` on your buffer type directly if that
 // type is owned by your code!
-let raw_allocation = presser::RawAllocation::from_raw_parts(my_buffer.ptr(), my_buffer.size());
+let mut raw_allocation = presser::RawAllocation::from_raw_parts(my_buffer.ptr(), my_buffer.size());
 
 // here we assert that we have exclusive access to the data in the buffer, and get the actual
 // `Slab` to use to copy into.
-let slab = unsafe { raw_allocation.borrow_as_slab(); }
+let mut slab = unsafe { raw_allocation.borrow_as_slab() };
 
 // now we may safely copy `my_data` into `my_buffer`, starting at a minimum offset of 0 into the buffer
 let copy_record = presser::copy_to_offset(&my_data, &mut slab, 0)?;
