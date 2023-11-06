@@ -15,7 +15,8 @@
 //! This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬
 //!
 //! `presser` helps with this by allowing you to view raw allocated memory of some size as a "[`Slab`]" of memory and then
-//! provides *safe, valid* ways to copy data into that memory. For example, you could implement [`Slab`] for your
+//! provides *safe, valid* ways to copy data into that memory, and helpers to make reading data back out of that buffer
+//! less fraight. For example, you could implement [`Slab`] for your
 //! GPU-allocated buffer type, or use the built-in [`RawAllocation`] workflow described below, then use
 //! [`copy_to_offset_with_align`] to copy any `T: Copy` data into that buffer safely for use on the GPU.
 //! Of course, if your `T` doesn't have the correct layout the GPU expects, accessing it on the GPU side may still be
@@ -36,6 +37,8 @@
 //!
 //! The main idea is to implement [`Slab`] on raw-buffer-esque-types (see [the `Slab` safety docs][Slab#Safety]),
 //! which then enables the use of the other functions within the crate.
+//!
+//! For built-in slab types, see [`RawAllocation`], [`HeapSlab`], and [`make_stack_slab`].
 //!
 //! Depending on your use case, you may be able to implement [`Slab`] directly for your buffer type, or it may
 //! be more convenient or necessary to create a wrapping struct that borrows your raw buffer type and in turn
@@ -123,6 +126,7 @@
 
 use core::alloc::Layout;
 use core::alloc::LayoutError;
+use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
@@ -140,6 +144,12 @@ pub use read::*;
 /// `Target = [MaybeUninit<u8>]` in terms of safety requirements. It is a separate
 /// trait for the extra flexibility having a trait we own provides: namely, the ability
 /// to implement it on foreign types.
+///
+/// It is implemented for a couple of built-in slab providers, as well as for `[MaybeUnint<u8>]`,
+/// but the idea is that you can also implement this for your own data structure which can
+/// serve as a slab and then use that structure directly with `presser`'s helpers.
+///
+/// For built-in slabs, see [`RawAllocation`], [`HeapSlab`], and [`make_stack_slab`].
 ///
 /// # Safety
 ///
@@ -176,6 +186,7 @@ pub unsafe trait Slab {
 
     /// Interpret a portion of `self` as a slice of [`MaybeUninit<u8>`]. This is likely not
     /// incredibly useful, you probably want to use [`Slab::as_maybe_uninit_bytes_mut`]
+    #[inline(always)]
     fn as_maybe_uninit_bytes(&self) -> &[MaybeUninit<u8>] {
         // SAFETY: Safe so long as top level safety guarantees are held, since
         // `MaybeUninit` has same layout as bare type.
@@ -183,6 +194,7 @@ pub unsafe trait Slab {
     }
 
     /// Interpret a portion of `self` as a mutable slice of [`MaybeUninit<u8>`].
+    #[inline(always)]
     fn as_maybe_uninit_bytes_mut(&mut self) -> &mut [MaybeUninit<u8>] {
         // SAFETY: Safe so long as top level safety guarantees are held, since
         // `MaybeUninit` has same layout as bare type.
@@ -201,6 +213,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_initialized_as_bytes(&self) -> &[u8] {
         // SAFETY: same requirements as function-level safety assuming the requirements
         // for creating `self` are met
@@ -219,6 +232,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_initialized_as_bytes_mut(&mut self) -> &mut [u8] {
         // SAFETY: same requirements as function-level safety assuming the requirements
         // for creating `self` are met
@@ -241,6 +255,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_range_initialized_as_bytes<R>(&self, range: R) -> &[u8]
     where
         R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
@@ -272,6 +287,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_range_initialized_as_bytes_mut<R>(&mut self, range: R) -> &mut [u8]
     where
         R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
@@ -285,6 +301,51 @@ pub unsafe trait Slab {
                 maybe_uninit_slice.len(),
             )
         }
+    }
+
+    /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
+    /// to have it read the contents of `self`. If you want the buffer to be filled with data
+    /// from the other side of the ffi and then read it back, use
+    /// [`as_ffi_readback_buffer`][Slab::as_ffi_readback_buffer] instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the range is out of bounds of `self`
+    ///
+    /// # Safety
+    ///
+    /// This function is safe in and of itself, but you must be careful not to use `self` for
+    /// anything else while the returned pointer is in use by whatever you're sending it to, and
+    /// be sure that you're upholding any alignment requirements needed.
+    #[inline(always)]
+    fn as_ffi_buffer<R>(&self, range: R) -> (*const c_void, usize)
+    where
+        R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        let maybe_uninit_slice = &self.as_maybe_uninit_bytes()[range];
+
+        (maybe_uninit_slice.base_ptr().cast(), maybe_uninit_slice.len())
+    }
+
+    /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
+    /// to be filled and then read using one or more of the `read_` helper functions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the range is out of bounds of `self`
+    ///
+    /// # Safety
+    ///
+    /// This function is safe in and of itself, but you must be careful not to use `self` for
+    /// anything else while the returned pointer is in use by whatever you're sending it to,
+    /// and be sure that you're upholding any alignment requirements needed.
+    #[inline(always)]
+    fn as_ffi_readback_buffer<R>(&mut self, range: R) -> (*mut c_void, usize)
+    where
+        R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        let maybe_uninit_slice = &mut self.as_maybe_uninit_bytes_mut()[range];
+        (maybe_uninit_slice.base_ptr_mut().cast(), maybe_uninit_slice.len())
     }
 }
 
@@ -529,7 +590,7 @@ unsafe impl<'a> Slab for BorrowedRawAllocation<'a> {
 }
 
 /// Computed offsets necessary for a copy or read operation with some layout. Should only be
-/// created by [`compute_offsets`]
+/// created by [`compute_and_validate_offsets`]
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ComputedOffsets {
     start: usize,
@@ -538,6 +599,7 @@ pub(crate) struct ComputedOffsets {
 }
 
 /// Compute and validate offsets for a copy or read operation with the given parameters.
+#[inline]
 pub(crate) fn compute_and_validate_offsets<S: Slab>(
     slab: &S,
     start_offset: usize,
@@ -581,9 +643,72 @@ pub(crate) fn compute_and_validate_offsets<S: Slab>(
 /// Given pointer and offset, returns a new offset aligned to `align`.
 ///
 /// `align` *must* be a power of two and >= 1 or else the result is meaningless.
+#[inline(always)]
 fn align_offset_up_to(ptr: usize, offset: usize, align: usize) -> Option<usize> {
     let offsetted_ptr = ptr.checked_add(offset)?;
     let aligned_ptr = offsetted_ptr.checked_add(align - 1)? & !(align - 1);
     // don't need to check since we know aligned_ptr is >= ptr at this point
     Some(aligned_ptr - ptr)
+}
+
+/// Make a `[MaybeUninit<u8>; N]` on the stack, which implements [`Slab`] and can therefore be used
+/// with many of the helpers provided by this crate.
+pub fn make_stack_slab<const N: usize>() -> [MaybeUninit<u8>; N] {
+    [MaybeUninit::uninit(); N]
+}
+
+/// A raw allocation on the heap which implements [`Slab`] and gets deallocated on [`Drop`].
+#[cfg(feature = "std")]
+pub struct HeapSlab {
+    base_ptr: NonNull<u8>,
+    layout: Layout,
+}
+
+#[cfg(feature = "std")]
+impl HeapSlab {
+    /// Make a new slab space on the heap. Begins as uninitialized. The memory will be be deallocated on drop.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the size of the given layout is 0.
+    pub fn new(layout: Layout) -> Self {
+        if layout.size() == 0 {
+            panic!("cannot make a heap slab of size 0")
+        }
+        // SAFETY: we just checked size is not 0, and we got the ptr back from alloc so we no it's
+        // not null.
+        let base_ptr = unsafe {
+            NonNull::new_unchecked(std::alloc::alloc(layout))
+        };
+        Self { base_ptr, layout }
+    }
+}
+
+#[cfg(feature = "std")]
+impl Drop for HeapSlab {
+    fn drop(&mut self) {
+        // SAFETY: we know that size isn't 0 since we checked that in new, and unless the user
+        // did something unsafely wrong, this memory won't be used after drop.
+        unsafe { std::alloc::dealloc(self.base_ptr.as_ptr(), self.layout) }
+    }
+}
+
+// SAFETY: We point to a single valid allocation, and the size is valid since it's a valid `Layout`.
+// Our allocation is valid until we are dropped, so our `base_ptr` access is as required
+#[cfg(feature = "std")]
+unsafe impl Slab for HeapSlab {
+    #[inline(always)]
+    fn base_ptr(&self) -> *const u8 {
+        self.base_ptr.as_ptr().cast_const()
+    }
+
+    #[inline(always)]
+    fn base_ptr_mut(&mut self) -> *mut u8 {
+        self.base_ptr.as_ptr()
+    }
+
+    #[inline(always)]
+    fn size(&self) -> usize {
+        self.layout.size()
+    }
 }

@@ -44,8 +44,9 @@ pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Resu
 /// - `offset` within `slab` is properly aligned for `T`
 /// - `offset` is within bounds of the `slab`
 /// - `offset + size_of::<T>` is within bounds of the `slab`
-/// - You must have previously **fully-initialized** a **valid** `T` at the given offset into `slab`.
-/// Validity is a complex topic not to be taken lightly.
+/// - You must have previously **fully-initialized** a **valid**\* `T` at the given offset into `slab`.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub unsafe fn read_at_offset_unchecked<'a, T, S: Slab>(slab: &'a S, offset: usize) -> &'a T {
@@ -75,6 +76,13 @@ pub unsafe fn read_at_offset_unchecked<'a, T, S: Slab>(slab: &'a S, offset: usiz
 ///
 /// You must have previously **fully-initialized** a **valid**\* `T` at the given offset into `slab`. If you want to fill an uninitialized
 /// buffer with data, you should instead use any of the copy helper functions or one of the `maybe_uninit_mut` read functions.
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
 ///
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
@@ -112,6 +120,13 @@ pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(
 /// - You must have previously **fully-initialized** a **valid** `T` at the given offset into `slab`. If you want to fill an uninitialized
 /// buffer with data, you should instead use any of the copy helper functions or one of the `maybe_uninit_mut` read functions.
 ///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
@@ -144,8 +159,16 @@ pub unsafe fn read_at_offset_mut_unchecked<'a, T, S: Slab>(
 /// # Safety
 ///
 /// This function is safe since in order to read any data you need to call the unsafe [`MaybeUninit::assume_init`] on the returned value.
-/// However, you should know that if you do that, you must have ensured that there is indeed a **valid** `T` in its place.
-/// Validity is a complex topic not to be taken lightly.
+/// However, you should know that if you do that, you must have ensured that there is indeed a **valid**\* `T` in its place.
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(
@@ -178,8 +201,16 @@ pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(
 /// - `offset` is within bounds of the `slab`
 /// - `offset + size_of::<T>` is within bounds of the `slab`
 ///
-/// You must have ensured there is a **fully-initialized** and **valid** `T` at the given offset into `slab` before calling [`MaybeUninit::assume_init`].
-/// Validity is a complex topic not to be taken lightly.
+/// You must have ensured there is a **fully-initialized** and **valid**\* `T` at the given offset into `slab` before calling [`MaybeUninit::assume_init`].
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub unsafe fn get_maybe_uninit_at_offset_mut_unchecked<'a, T, S: Slab>(
@@ -210,8 +241,9 @@ pub unsafe fn get_maybe_uninit_at_offset_mut_unchecked<'a, T, S: Slab>(
 ///
 /// # Safety
 ///
-/// You must have previously **fully-initialized** a **valid** a `[T; len]` at the given offset into `slab`.
-/// Validity is a complex topic not to be taken lightly.
+/// You must have previously **fully-initialized** a **valid**\* a `[T; len]` at the given offset into `slab`.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub unsafe fn read_slice_at_offset<'a, T, S: Slab>(
@@ -249,8 +281,9 @@ pub unsafe fn read_slice_at_offset<'a, T, S: Slab>(
 /// - `offset` within `slab` is properly aligned for `T`
 /// - `offset` is within bounds of the `slab`
 /// - `offset + size_of::<T> * len` is within bounds of the `slab`
-/// - You must have previously **fully-initialized** a **valid** a `[T; len]` at the given offset into `slab`.
-/// Validity is a complex topic not to be taken lightly.
+/// - You must have previously **fully-initialized** a **valid**\* a `[T; len]` at the given offset into `slab`.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 /// - See also safety docs of [`core::slice::from_raw_parts`].
 #[inline]
@@ -286,6 +319,13 @@ pub unsafe fn read_slice_at_offset_unchecked<'a, T, S: Slab>(
 ///
 /// You must have previously **fully-initialized** a **valid**\* `[T; len]` at the given offset into `slab`. If you want to fill an uninitialized
 /// buffer with data, you should instead use any of the copy helper functions or one of the `maybe_uninit_mut` read functions.
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
 ///
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
@@ -329,6 +369,13 @@ pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab>(
 /// buffer with data, you should instead use any of the copy helper functions or one of the `maybe_uninit_mut` read functions.
 /// - See also safety docs of [`core::slice::from_raw_parts_mut`].
 ///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
@@ -363,8 +410,16 @@ pub unsafe fn read_slice_at_offset_mut_unchecked<'a, T, S: Slab>(
 /// # Safety
 ///
 /// This function is safe since in order to read any data you need to call the unsafe [`MaybeUninit::assume_init`] on the returned value.
-/// However, you should know that if you do that, you must have ensured that there is indeed a **valid** `T` in its place.
-/// Validity is a complex topic not to be taken lightly.
+/// However, you should know that if you do that, you must have ensured that there is indeed a **valid**\* `T` in its place.
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(
@@ -403,8 +458,16 @@ pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(
 /// - `offset + size_of::<T> * len` is within bounds of the `slab`
 /// - See also safety docs of [`core::slice::from_raw_parts_mut`].
 ///
-/// You must have ensured there is a **fully-initialized** and **valid** `T` in each returned `MaybeUninit<T>` before calling [`MaybeUninit::assume_init`].
-/// Validity is a complex topic not to be taken lightly.
+/// You must have ensured there is a **fully-initialized** and **valid**\* `T` in each returned `MaybeUninit<T>` before calling [`MaybeUninit::assume_init`].
+///
+/// **Note that *if you write through the returned reference***, any *padding bytes* within the layout of `T`
+/// (which for a `repr(Rust)` type is arbitrary and unknown) must thereafter be considered *uninitialized*
+/// until you explicitly initialize them again. This means that if you write a `T` which contains
+/// padding into `slab`, you **must not**, for example, try to read those bytes as `&[u8]` afterwards
+/// (or as some other type which expects those bytes to be initialized), as you would then be
+/// reading uninitialized memory, which is *undefined behavior*.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub unsafe fn get_maybe_uninit_slice_at_offset_mut_unchecked<'a, T, S: Slab>(
