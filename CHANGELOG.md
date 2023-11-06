@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `[]_exact` versions of copy functions which ensure that the copy will actually start at the
 provided start_offset, otherwise returning an error.
 - Add `CopyError::RequestedOffsetUnaligned` to support the above error case.
+- Add `read_[]` and `get_maybe_uninit_[]_mut` helper functions for accessing copied data.
 
 ## [0.3.1] - 2022-10-16
 

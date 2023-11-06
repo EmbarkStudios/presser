@@ -5,17 +5,18 @@
 //!
 //! ## Motivation
 //!
-//! `presser` can help you when copying data into raw buffers. One primary use-case is copying data into
+//! `presser` can help you when copying data into and reading data out of raw buffers. One primary use-case is copying data into
 //! graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
 //! right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing an allocated
 //! but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**\*, and `transmute`ing even a
 //! `T: Copy` type which has *any padding bytes in its layout* as a `&[u8]` to be the source of a copy is
 //! **also instantly undefined behavior**, in both cases because it is *invalid* to create a reference to an invalid
 //! value (and uninitialized memory is an invalid `u8`), *even if* your code never actually accesses that memory.
-//! This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬.
+//! This immediately makes what seems like the most straightforward way to copy data into buffers unsound 😬
 //!
 //! `presser` helps with this by allowing you to view raw allocated memory of some size as a "[`Slab`]" of memory and then
-//! provides *safe, valid* ways to copy data into that memory. For example, you could implement [`Slab`] for your
+//! provides *safe, valid* ways to copy data into that memory, and helpers to make reading data back out of that buffer
+//! less fraight. For example, you could implement [`Slab`] for your
 //! GPU-allocated buffer type, or use the built-in [`RawAllocation`] workflow described below, then use
 //! [`copy_to_offset_with_align`] to copy any `T: Copy` data into that buffer safely for use on the GPU.
 //! Of course, if your `T` doesn't have the correct layout the GPU expects, accessing it on the GPU side may still be
@@ -24,10 +25,10 @@
 //! \* *If you're currently thinking to yourself "bah! what's the issue? surely an uninit u8 is just any random bit pattern
 //! and that's fine we don't care," [check out this blog post](https://www.ralfj.de/blog/2019/07/14/uninit.html) by
 //! @RalfJung, one of the people leading the effort to better define Rust's memory and execution model. As is explored
-//! in that blog post, an *uninit* piece of memory is not simply *an arbitrary bit pattern*, it is a wholly separate
+//! in that blog post, an* uninit *piece of memory is not simply* an arbitrary bit pattern, *it is a wholly separate
 //! state about a piece of memory, outside of its value, which lets the compiler perform optimizations that reorder,
 //! delete, and otherwise change the actual execution flow of your program in ways that cannot be described simply
-//! by "the value could have *some* possible bit pattern". LLVM and Clang are changing themselves to require special
+//! by "the value could have* some *possible bit pattern". LLVM and Clang are changing themselves to require special
 //! `noundef` attribute to perform many important optimizations that are otherwise unsound. For a concrete example
 //! of the sorts of problems this can cause,
 //! [see this issue @scottmcm hit](https://github.com/rust-lang/rust/pull/98919#issuecomment-1186106387).*
@@ -37,6 +38,8 @@
 //! The main idea is to implement [`Slab`] on raw-buffer-esque-types (see [the `Slab` safety docs][Slab#Safety]),
 //! which then enables the use of the other functions within the crate.
 //!
+//! For built-in slab types, see [`RawAllocation`], [`HeapSlab`], and [`make_stack_slab`].
+//!
 //! Depending on your use case, you may be able to implement [`Slab`] directly for your buffer type, or it may
 //! be more convenient or necessary to create a wrapping struct that borrows your raw buffer type and in turn
 //! implements [`Slab`]. For an example of this, see [`RawAllocation`] and [`BorrowedRawAllocation`], which you
@@ -44,7 +47,7 @@
 //! a [`BorrowedRawAllocation`] (which implements [`Slab`]) by calling the unsafe function
 //! [`RawAllocation::borrow_as_slab`]
 //!
-//! Once you have a slab, you can use the copy helper functions provided at the crate root, for example,
+//! Once you have a slab, you can use the helper functions provided at the crate root, for example,
 //! [`copy_to_offset`] and [`copy_to_offset_with_align`].
 //!
 //! ### Example
@@ -78,6 +81,13 @@
 //! // `my_data` may be placed at a different offset than requested. so, we check the returned
 //! // `CopyRecord` to check the actual start offset of the copied data.
 //! let actual_start_offset = copy_record.copy_start_offset;
+//!
+//! // we may later (*unsafely*) read back our data. note that the read helpers provided by presser
+//! // are mostly unsafe. They do help protect you from some common footguns, but you still ultimately need
+//! // to guarantee you put the proper data where you're telling it you put the proper data.
+//! let my_copied_data_in_my_buffer: &MyDataStruct = unsafe {
+//!     presser::read_at_offset(&slab, actual_start_offset)?
+//! };
 //! ```
 //!
 //! ### `#[no_std]`
@@ -94,13 +104,16 @@
 //! using same backing memory that the [`Slab`] you copied into used are still safe.
 //!
 //! For example, say you have a fully-initialized
-//! chunk of bytes (like a `Vec<u8>`), which you view as a [`Slab`], and then (safely) perform a copy
+//! chunk of bytes (like a `Vec<u8>`), which you (unsafely\*) view as a [`Slab`], and then (safely) perform a copy
 //! operation into using [`copy_to_offset`]. If the `T` you copied into it has any padding bytes in
 //! its memory layout, then the memory locations where those padding bytes now exist in the underlying `Vec`'s
 //! memory must now be treated as uninitialized. As such, taking any view into that byte vector which
 //! relies on those newly-uninit bytes being initialized to be valid (for example, taking a `&[u8]` slice of the `Vec`
 //! which includes those bytes, ***even if your code never actually reads from that slice***)
 //! is now instant **undefined behavior**.
+//!
+//! \* *Note: this is unsafe because, as exemplified, you may copy uninit data into the buffer. Hence, care should
+//! be taken when implementing [`Slab`] and then providing a safe interface on top of a low level buffer type.*
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(missing_docs)]
@@ -113,17 +126,30 @@
 
 use core::alloc::Layout;
 use core::alloc::LayoutError;
+use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 
+mod copy;
+mod read;
+
+pub use copy::*;
+pub use read::*;
+
 /// Represents a contiguous piece of a single allocation with some layout that is used as a
-/// data copying destination. May be wholly or partially uninitialized.
+/// data copying destination or reading source. May be wholly or partially uninitialized.
 ///
 /// This trait is *basically* equivalent to implementing `Deref`/`DerefMut` with
 /// `Target = [MaybeUninit<u8>]` in terms of safety requirements. It is a separate
 /// trait for the extra flexibility having a trait we own provides: namely, the ability
 /// to implement it on foreign types.
+///
+/// It is implemented for a couple of built-in slab providers, as well as for `[MaybeUninit<u8>]`,
+/// but the idea is that you can also implement this for your own data structure which can
+/// serve as a slab and then use that structure directly with `presser`'s helpers.
+///
+/// For built-in slabs, see [`RawAllocation`], [`HeapSlab`], and [`make_stack_slab`].
 ///
 /// # Safety
 ///
@@ -162,6 +188,7 @@ pub unsafe trait Slab {
 
     /// Interpret a portion of `self` as a slice of [`MaybeUninit<u8>`]. This is likely not
     /// incredibly useful, you probably want to use [`Slab::as_maybe_uninit_bytes_mut`]
+    #[inline(always)]
     fn as_maybe_uninit_bytes(&self) -> &[MaybeUninit<u8>] {
         // SAFETY: Safe so long as top level safety guarantees are held, since
         // `MaybeUninit` has same layout as bare type.
@@ -169,6 +196,7 @@ pub unsafe trait Slab {
     }
 
     /// Interpret a portion of `self` as a mutable slice of [`MaybeUninit<u8>`].
+    #[inline(always)]
     fn as_maybe_uninit_bytes_mut(&mut self) -> &mut [MaybeUninit<u8>] {
         // SAFETY: Safe so long as top level safety guarantees are held, since
         // `MaybeUninit` has same layout as bare type.
@@ -187,6 +215,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_initialized_as_bytes(&self) -> &[u8] {
         // SAFETY: same requirements as function-level safety assuming the requirements
         // for creating `self` are met
@@ -205,6 +234,7 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_initialized_as_bytes_mut(&mut self) -> &mut [u8] {
         // SAFETY: same requirements as function-level safety assuming the requirements
         // for creating `self` are met
@@ -227,13 +257,14 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_range_initialized_as_bytes<R>(&self, range: R) -> &[u8]
     where
         R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
     {
         let maybe_uninit_slice = &self.as_maybe_uninit_bytes()[range];
         // SAFETY: same requirements as function-level safety assuming the requirements
-        // for creating `self` are met since `MaybeUnint<T>` has same layout as `T`
+        // for creating `self` are met since `MaybeUninit<T>` has same layout as `T`
         unsafe {
             core::slice::from_raw_parts(
                 maybe_uninit_slice.as_ptr().cast(),
@@ -258,13 +289,14 @@ pub unsafe trait Slab {
     /// behavior***, even if you *do noting* with the result.
     ///
     /// Also see the [crate-level Safety documentation][`crate#safety`] for more.
+    #[inline(always)]
     unsafe fn assume_range_initialized_as_bytes_mut<R>(&mut self, range: R) -> &mut [u8]
     where
         R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
     {
         let maybe_uninit_slice = &mut self.as_maybe_uninit_bytes_mut()[range];
         // SAFETY: same requirements as function-level safety assuming the requirements
-        // for creating `self` are met since `MaybeUnint<T>` has same layout as `T`
+        // for creating `self` are met since `MaybeUninit<T>` has same layout as `T`
         unsafe {
             core::slice::from_raw_parts_mut(
                 maybe_uninit_slice.as_mut_ptr().cast(),
@@ -272,10 +304,64 @@ pub unsafe trait Slab {
             )
         }
     }
+
+    /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
+    /// to have it read the contents of `self`. If you want the buffer to be filled with data
+    /// from the other side of the ffi and then read it back, use
+    /// [`as_ffi_readback_buffer`][Slab::as_ffi_readback_buffer] instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the range is out of bounds of `self`
+    ///
+    /// # Safety
+    ///
+    /// This function is safe in and of itself, but you must be careful not to use `self` for
+    /// anything else while the returned pointer is in use by whatever you're sending it to, and
+    /// be sure that you're upholding any alignment requirements needed.
+    #[inline(always)]
+    fn as_ffi_buffer<R>(&self, range: R) -> (*const c_void, usize)
+    where
+        R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        let maybe_uninit_slice = &self.as_maybe_uninit_bytes()[range];
+
+        (
+            maybe_uninit_slice.base_ptr().cast(),
+            maybe_uninit_slice.len(),
+        )
+    }
+
+    /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
+    /// to be filled and then read using one or more of the `read_` helper functions.
+    ///
+    /// You may want to use [`readback_from_ffi`] or [`readback_sice_from_ffi`] instead, which are
+    /// even less prone to misuse.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the range is out of bounds of `self`
+    ///
+    /// # Safety
+    ///
+    /// This function is safe in and of itself, but you must be careful not to use `self` for
+    /// anything else while the returned pointer is in use by whatever you're sending it to,
+    /// and be sure that you're upholding any alignment requirements needed.
+    #[inline(always)]
+    fn as_ffi_readback_buffer<R>(&mut self, range: R) -> (*mut c_void, usize)
+    where
+        R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        let maybe_uninit_slice = &mut self.as_maybe_uninit_bytes_mut()[range];
+        (
+            maybe_uninit_slice.base_ptr_mut().cast(),
+            maybe_uninit_slice.len(),
+        )
+    }
 }
 
 // SAFETY: The captured `[MaybeUninit<u8>]` will all be part of the same allocation object, and borrowck
-// will assure that the borrows that occur on `self` on the relevant methods live long enough since they are
+// will ensure that the borrows that occur on `self` on the relevant methods live long enough since they are
 // native borrows anyway.
 unsafe impl Slab for [MaybeUninit<u8>] {
     fn base_ptr(&self) -> *const u8 {
@@ -288,6 +374,43 @@ unsafe impl Slab for [MaybeUninit<u8>] {
 
     fn size(&self) -> usize {
         core::mem::size_of_val(self)
+    }
+}
+
+/// An error that may occur during a copy or read operation.
+#[derive(Debug)]
+pub enum Error {
+    /// Copy or read would exceed the end of the allocation
+    OutOfMemory,
+    /// Requested to copy to or read from an offset outside the bounds of the allocation
+    OffsetOutOfBounds,
+    /// Computed invalid layout for copy operation, probably caused by incredibly large size, offset, or min-alignment parameters
+    InvalidLayout,
+    /// The requested offset was unaligned. In a read operation, this means the provided offset into the buffer was not properly aligned
+    /// for the requested type.
+    ///
+    /// In an `exact` variant copy function, the computed copy start offset did not match the requested start offset,
+    /// meaning the requested start offset was not properly aligned.
+    RequestedOffsetUnaligned,
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", match self {
+            Self::OutOfMemory => "End of copy or read operation would exceed the end of the allocation",
+            Self::OffsetOutOfBounds => "Requested read from or copy to a location starting outside the allocation",
+            Self::InvalidLayout => "Computed invalid layout requirements, probably caused by incredibly large size, offset, or alignment parameters",
+            Self::RequestedOffsetUnaligned => "Requested offset into Slab did not satisfy computed alignment requirements",
+        })
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
+
+impl From<LayoutError> for Error {
+    fn from(_err: LayoutError) -> Self {
+        Self::InvalidLayout
     }
 }
 
@@ -477,9 +600,61 @@ unsafe impl<'a> Slab for BorrowedRawAllocation<'a> {
     }
 }
 
+/// Computed offsets necessary for a copy or read operation with some layout. Should only be
+/// created by [`compute_and_validate_offsets`]
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ComputedOffsets {
+    start: usize,
+    end: usize,
+    end_padded: usize,
+}
+
+/// Compute and validate offsets for a copy or read operation with the given parameters.
+#[inline(always)]
+pub(crate) fn compute_and_validate_offsets<S: Slab>(
+    slab: &S,
+    start_offset: usize,
+    t_layout: Layout,
+    min_alignment: usize,
+    require_exact_start_offset: bool,
+) -> Result<ComputedOffsets, Error> {
+    let layout = t_layout.align_to(min_alignment.next_power_of_two())?;
+
+    let computed_start_offset =
+        align_offset_up_to(slab.base_ptr() as usize, start_offset, layout.align())
+            .ok_or(Error::InvalidLayout)?;
+    if require_exact_start_offset && start_offset != computed_start_offset {
+        return Err(Error::RequestedOffsetUnaligned);
+    }
+    let computed_end_offset = computed_start_offset
+        .checked_add(layout.size())
+        .ok_or(Error::InvalidLayout)?;
+    let computed_end_offset_padded = computed_start_offset
+        .checked_add(layout.pad_to_align().size())
+        .ok_or(Error::InvalidLayout)?;
+
+    // check start is inside slab
+    // if within slab, we also know that copy_start_offset is <= isize::MAX since slab.size() must be <= isize::MAX
+    if computed_start_offset > slab.size() {
+        return Err(Error::OffsetOutOfBounds);
+    }
+
+    // check end is inside slab
+    if computed_end_offset_padded > slab.size() {
+        return Err(Error::OutOfMemory);
+    }
+
+    Ok(ComputedOffsets {
+        start: computed_start_offset,
+        end: computed_end_offset,
+        end_padded: computed_end_offset_padded,
+    })
+}
+
 /// Given pointer and offset, returns a new offset aligned to `align`.
 ///
 /// `align` *must* be a power of two and >= 1 or else the result is meaningless.
+#[inline(always)]
 fn align_offset_up_to(ptr: usize, offset: usize, align: usize) -> Option<usize> {
     let offsetted_ptr = ptr.checked_add(offset)?;
     let aligned_ptr = offsetted_ptr.checked_add(align - 1)? & !(align - 1);
@@ -487,486 +662,62 @@ fn align_offset_up_to(ptr: usize, offset: usize, align: usize) -> Option<usize> 
     Some(aligned_ptr - ptr)
 }
 
-/// Compute and validate offsets for a copy operation with the given parameters.
-fn compute_offsets<S: Slab>(
-    dst: &S,
-    start_offset: usize,
-    t_layout: Layout,
-    min_alignment: usize,
-    require_exact_start_offset: bool,
-) -> Result<CopyRecord, CopyError> {
-    let copy_layout = t_layout.align_to(min_alignment.next_power_of_two())?;
-
-    let copy_start_offset =
-        align_offset_up_to(dst.base_ptr() as usize, start_offset, copy_layout.align())
-            .ok_or(CopyError::InvalidLayout)?;
-    if require_exact_start_offset && start_offset != copy_start_offset {
-        return Err(CopyError::RequestedOffsetUnaligned);
-    }
-    let copy_end_offset = copy_start_offset
-        .checked_add(copy_layout.size())
-        .ok_or(CopyError::InvalidLayout)?;
-    let copy_end_offset_padded = copy_start_offset
-        .checked_add(copy_layout.pad_to_align().size())
-        .ok_or(CopyError::InvalidLayout)?;
-
-    // check start is inside slab
-    // if within slab, we also know that copy_start_offset is <= isize::MAX since slab.size() must be <= isize::MAX
-    if copy_start_offset > dst.size() {
-        return Err(CopyError::OffsetOutOfBounds);
-    }
-
-    // check end is inside slab
-    if copy_end_offset_padded > dst.size() {
-        return Err(CopyError::OutOfMemory);
-    }
-
-    Ok(CopyRecord {
-        copy_start_offset,
-        copy_end_offset,
-        copy_end_offset_padded,
-    })
+/// Make a `[MaybeUninit<u8>; N]` on the stack, which implements [`Slab`] and can therefore be used
+/// with many of the helpers provided by this crate.
+pub fn make_stack_slab<const N: usize>() -> [MaybeUninit<u8>; N] {
+    [MaybeUninit::uninit(); N]
 }
 
-/// An error that may occur during a copy operation.
-#[derive(Debug)]
-pub enum CopyError {
-    /// Copy would exceed the end of the allocation
-    OutOfMemory,
-    /// Requested to copy to an offset outside the bounds of the allocation
-    OffsetOutOfBounds,
-    /// Computed invalid layout for copy operation, probably caused by incredibly large size, offset, or min-alignment parameters
-    InvalidLayout,
-    /// In an `exact` variant copy function, the computed copy start offset did not match the requested start offset,
-    /// meaning the requested start offset was not properly aligned
-    RequestedOffsetUnaligned,
+/// A raw allocation on the heap which implements [`Slab`] and gets deallocated on [`Drop`].
+#[cfg(feature = "std")]
+pub struct HeapSlab {
+    base_ptr: NonNull<u8>,
+    layout: Layout,
 }
 
-impl core::fmt::Display for CopyError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", match self {
-            Self::OutOfMemory => "Copy would exceed the end of the allocation",
-            Self::OffsetOutOfBounds => "Requested copy to a location starting outside the allocation",
-            Self::InvalidLayout => "Invalid layout, probably caused by incredibly large size, offset, or alignment parameters",
-            Self::RequestedOffsetUnaligned => "Requested start_offset did not satisfy computed alignment requirements",
-        })
+#[cfg(feature = "std")]
+impl HeapSlab {
+    /// Make a new slab space on the heap. Begins as uninitialized. The memory will be be deallocated on drop.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the size of the given layout is 0.
+    pub fn new(layout: Layout) -> Self {
+        if layout.size() == 0 {
+            panic!("cannot make a heap slab of size 0")
+        }
+        // SAFETY: we just checked size is not 0, and we got the ptr back from alloc so we no it's
+        // not null.
+        let base_ptr = unsafe { NonNull::new_unchecked(std::alloc::alloc(layout)) };
+        Self { base_ptr, layout }
     }
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for CopyError {}
-
-impl From<LayoutError> for CopyError {
-    fn from(_err: LayoutError) -> Self {
-        Self::InvalidLayout
+impl Drop for HeapSlab {
+    fn drop(&mut self) {
+        // SAFETY: we know that size isn't 0 since we checked that in new, and unless the user
+        // did something unsafely wrong, this memory won't be used after drop.
+        unsafe { std::alloc::dealloc(self.base_ptr.as_ptr(), self.layout) }
     }
 }
 
-/// Record of the results of a copy operation
-#[derive(Debug, Copy, Clone)]
-pub struct CopyRecord {
-    /// The offset from the start of the allocation, in bytes, at which the
-    /// copy operation began to write data.
-    ///
-    /// Not necessarily equal to the `start_offset`, since this offset
-    /// includes necessary padding to assure alignment.
-    pub copy_start_offset: usize,
-
-    /// The offset from the start of the allocation, in bytes, at which the
-    /// copy operation no longer wrote data.
-    ///
-    /// This does not include any padding at the end necessary to maintain
-    /// alignment requirements.
-    pub copy_end_offset: usize,
-
-    /// The offset from the start of the allocation, in bytes, at which the
-    /// copy operation no longer wrote data, plus any padding necessary to
-    /// maintain derived alignment requirements.
-    pub copy_end_offset_padded: usize,
-}
-
-/// Copies `src` into the memory represented by `dst` starting at *exactly*
-/// `start_offset` bytes past the start of `dst`
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
-/// where the first byte of the copied data will be placed. If the requested
-/// start offset does not satisfy computed alignment requirements, an error will
-/// be returned and no data will be copied.
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_to_offset_exact<T: Copy, S: Slab>(
-    src: &T,
-    dst: &mut S,
-    start_offset: usize,
-) -> Result<CopyRecord, CopyError> {
-    copy_to_offset_with_align_exact(src, dst, start_offset, 1)
-}
-
-/// Copies `src` into the memory represented by `dst` starting at *exactly*
-/// `start_offset` bytes past the start of `dst` and with minimum alignment
-/// `min_alignment`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
-/// where the first byte of the copied data will be placed. If the requested
-/// start offset does not satisfy computed alignment requirements, an error will
-/// be returned and no data will be copied.
-/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
-/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab>(
-    src: &T,
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<CopyRecord, CopyError> {
-    let t_layout = Layout::new::<T>();
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
-
-    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
-    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
-
-    // SAFETY:
-    // - src is valid as we have a reference to it
-    // - dst is valid so long as requirements for `slab` were met, i.e.
-    // we have unique access to the region described and that it is valid for the duration
-    // of 'a.
-    // - areas not overlapping as long as safety requirements of creation of `self` were met,
-    // i.e. that we have exclusive access to the region of memory described.
-    // - dst aligned at least to align_of::<T>()
-    // - checked that copy stays within bounds of our allocation
-    unsafe {
-        core::ptr::copy_nonoverlapping(src as *const T, dst_ptr, 1);
-    }
-
-    Ok(record)
-}
-
-/// Copies `src` into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `dst`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`,
-/// in bytes, before which any copied data will *certainly not* be placed. However,
-/// the actual beginning of the copied data may not be exactly at `start_offset` if
-/// padding bytes are needed to satisfy alignment requirements. The actual beginning
-/// of the copied bytes is contained in the returned [`CopyRecord`].
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_to_offset<T: Copy, S: Slab>(
-    src: &T,
-    dst: &mut S,
-    start_offset: usize,
-) -> Result<CopyRecord, CopyError> {
-    copy_to_offset_with_align(src, dst, start_offset, 1)
-}
-
-/// Copies `src` into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `dst` and with minimum alignment
-/// `min_alignment`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`,
-/// in bytes, before which any copied data will *certainly not* be placed. However,
-/// the actual beginning of the copied data may not be exactly at `start_offset` if
-/// padding bytes are needed to satisfy alignment requirements. The actual beginning
-/// of the copied bytes is contained in the returned [`CopyRecord`].
-/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
-/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
-    src: &T,
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<CopyRecord, CopyError> {
-    let t_layout = Layout::new::<T>();
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
-
-    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
-    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
-
-    // SAFETY:
-    // - src is valid as we have a reference to it
-    // - dst is valid so long as requirements for `slab` were met, i.e.
-    // we have unique access to the region described and that it is valid for the duration
-    // of 'a.
-    // - areas not overlapping as long as safety requirements of creation of `self` were met,
-    // i.e. that we have exclusive access to the region of memory described.
-    // - dst aligned at least to align_of::<T>()
-    // - checked that copy stays within bounds of our allocation
-    unsafe {
-        core::ptr::copy_nonoverlapping(src as *const T, dst_ptr, 1);
-    }
-
-    Ok(record)
-}
-
-/// Copies from `slice` into the memory represented by `dst` starting at *exactly*
-/// `start_offset` bytes past the start of `self`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
-/// where the first byte of the copied data will be placed. If the requested
-/// start offset does not satisfy computed alignment requirements, an error will
-/// be returned and no data will be copied.
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab>(
-    src: &[T],
-    dst: &mut S,
-    start_offset: usize,
-) -> Result<CopyRecord, CopyError> {
-    copy_from_slice_to_offset_with_align(src, dst, start_offset, 1)
-}
-
-/// Copies from `slice` into the memory represented by `dst` starting at *exactly*
-/// `start_offset` bytes past the start of `dst` and with minimum alignment `min_alignment`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`, in bytes,
-/// where the first byte of the copied data will be placed. If the requested
-/// start offset does not satisfy computed alignment requirements, an error will
-/// be returned and no data will be copied.
-/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
-/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
-///     - The whole data of the slice will be copied directly, so, alignment between elements
-/// ignores `min_alignment`.
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab>(
-    src: &[T],
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<CopyRecord, CopyError> {
-    let t_layout = Layout::for_value(src);
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, true)?;
-
-    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
-    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
-
-    // SAFETY:
-    // - src is valid as we have a reference to it
-    // - dst is valid so long as requirements for `slab` were met, i.e.
-    // we have unique access to the region described and that it is valid for the duration
-    // of 'a.
-    // - areas not overlapping as long as safety requirements of creation of `self` were met,
-    // i.e. that we have exclusive access to the region of memory described.
-    // - dst aligned at least to align_of::<T>()
-    // - checked that copy stays within bounds of our allocation
-    unsafe {
-        core::ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, src.len());
-    }
-
-    Ok(record)
-}
-
-/// Copies from `slice` into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `self`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`,
-/// in bytes, before which any copied data will *certainly not* be placed. However,
-/// the actual beginning of the copied data may not be exactly at `start_offset` if
-/// padding bytes are needed to satisfy alignment requirements. The actual beginning
-/// of the copied bytes is contained in the returned [`CopyRecord`].
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
-    src: &[T],
-    dst: &mut S,
-    start_offset: usize,
-) -> Result<CopyRecord, CopyError> {
-    copy_from_slice_to_offset_with_align(src, dst, start_offset, 1)
-}
-
-/// Copies from `slice` into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `dst`.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`,
-/// in bytes, before which any copied data will *certainly not* be placed. However,
-/// the actual beginning of the copied data may not be exactly at `start_offset` if
-/// padding bytes are needed to satisfy alignment requirements. The actual beginning
-/// of the copied bytes is contained in the returned [`CopyRecord`].
-/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
-/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
-///     - The whole data of the slice will be copied directly, so, alignment between elements
-/// ignores `min_alignment`.
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
-#[inline]
-pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
-    src: &[T],
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<CopyRecord, CopyError> {
-    let t_layout = Layout::for_value(src);
-    let record = compute_offsets(&*dst, start_offset, t_layout, min_alignment, false)?;
-
-    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
-    let dst_ptr = unsafe { dst.base_ptr_mut().add(record.copy_start_offset) }.cast::<T>();
-
-    // SAFETY:
-    // - src is valid as we have a reference to it
-    // - dst is valid so long as requirements for `slab` were met, i.e.
-    // we have unique access to the region described and that it is valid for the duration
-    // of 'a.
-    // - areas not overlapping as long as safety requirements of creation of `self` were met,
-    // i.e. that we have exclusive access to the region of memory described.
-    // - dst aligned at least to align_of::<T>()
-    // - checked that copy stays within bounds of our allocation
-    unsafe {
-        core::ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, src.len());
-    }
-
-    Ok(record)
-}
-
-/// Copies from `src` iterator into the memory represented by `dst` starting at a minimum location
-/// of `start_offset` bytes past the start of `dst`.
-///
-/// Returns a vector of [`CopyRecord`]s, one for each item in the `src` iterator.
-///
-/// - `start_offset` is the offset into the allocation represented by `dst`,
-/// in bytes, before which any copied data will *certainly not* be placed. However,
-/// the actual beginning of the copied data may not be exactly at `start_offset` if
-/// padding bytes are needed to satisfy alignment requirements. The actual beginning
-/// of the copied bytes is contained in the returned [`CopyRecord`]s.
-/// - `min_alignment` is the minimum alignment to which the copy will be aligned. The
-/// copy may not actually be aligned to `min_alignment` depending on the alignment requirements
-/// of `T` (the actual alignment will be the greater between `align_of::<T>` and `min_align.next_power_of_two()`).
-/// - For this variation, `min_alignment` will also be respected *between* elements yielded by
-/// the iterator. To copy inner elements aligned only to `align_of::<T>()` (i.e. with the layout of
-/// an `[T]`), see [`copy_from_iter_to_offset_with_align_packed`].
-///
-/// # Safety
-///
-/// This function is safe on its own, however it is very possible to do unsafe
-/// things if you read the copied data in the wrong way. See the
-/// [crate-level Safety documentation][`crate#safety`] for more.
+// SAFETY: We point to a single valid allocation, and the size is valid since it's a valid `Layout`.
+// Our allocation is valid until we are dropped, so our `base_ptr` access is as required
 #[cfg(feature = "std")]
-#[inline]
-pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
-    src: Iter,
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<Vec<CopyRecord>, CopyError> {
-    let mut offset = start_offset;
-
-    src.map(|item| {
-        let copy_record = copy_to_offset_with_align(&item, dst, offset, min_alignment)?;
-        offset = copy_record.copy_end_offset;
-        Ok(copy_record)
-    })
-    .collect::<Result<Vec<_>, _>>()
-}
-
-/// Like [`copy_from_iter_to_offset_with_align`] except that
-/// alignment between elements yielded by the iterator will ignore `min_alignment`
-/// and rather only be aligned to the alignment of `T`.
-///
-/// Because of this, only one [`CopyRecord`] is returned specifying the record of the
-/// entire block of copied data. If the `src` iterator is empty, returns `None`.
-#[inline]
-pub fn copy_from_iter_to_offset_with_align_packed<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
-    mut src: Iter,
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<Option<CopyRecord>, CopyError> {
-    let first_record = if let Some(first_item) = src.next() {
-        copy_to_offset_with_align(&first_item, dst, start_offset, min_alignment)?
-    } else {
-        return Ok(None);
-    };
-
-    let mut prev_record = first_record;
-
-    for item in src {
-        let copy_record = copy_to_offset_with_align(&item, dst, prev_record.copy_end_offset, 1)?;
-        prev_record = copy_record;
+unsafe impl Slab for HeapSlab {
+    #[inline(always)]
+    fn base_ptr(&self) -> *const u8 {
+        self.base_ptr.as_ptr().cast_const()
     }
 
-    Ok(Some(CopyRecord {
-        copy_start_offset: first_record.copy_start_offset,
-        copy_end_offset: prev_record.copy_end_offset,
-        copy_end_offset_padded: prev_record.copy_end_offset_padded,
-    }))
-}
-
-/// Like [`copy_from_iter_to_offset_with_align_packed`] except that it will return an error
-/// and no data will be copied if the supplied `start_offset` doesn't meet the computed alignment
-/// requirements.
-#[inline]
-pub fn copy_from_iter_to_offset_with_align_exact_packed<
-    T: Copy,
-    Iter: Iterator<Item = T>,
-    S: Slab,
->(
-    mut src: Iter,
-    dst: &mut S,
-    start_offset: usize,
-    min_alignment: usize,
-) -> Result<Option<CopyRecord>, CopyError> {
-    let first_record = if let Some(first_item) = src.next() {
-        copy_to_offset_with_align_exact(&first_item, dst, start_offset, min_alignment)?
-    } else {
-        return Ok(None);
-    };
-
-    let mut prev_record = first_record;
-
-    for item in src {
-        let copy_record =
-            copy_to_offset_with_align_exact(&item, dst, prev_record.copy_end_offset, 1)?;
-        prev_record = copy_record;
+    #[inline(always)]
+    fn base_ptr_mut(&mut self) -> *mut u8 {
+        self.base_ptr.as_ptr()
     }
 
-    Ok(Some(CopyRecord {
-        copy_start_offset: first_record.copy_start_offset,
-        copy_end_offset: prev_record.copy_end_offset,
-        copy_end_offset_padded: prev_record.copy_end_offset_padded,
-    }))
+    #[inline(always)]
+    fn size(&self) -> usize {
+        self.layout.size()
+    }
 }

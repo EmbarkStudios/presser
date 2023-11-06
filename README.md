@@ -8,7 +8,7 @@
 
 # `🗜 presser`
 
-**Utilities to help make copying data around into raw, possibly-uninitialized buffers easier and safer.**
+**Utilities to help make working with raw, possibly-uninitialized buffers easier and safer.**
 
 [![Embark](https://img.shields.io/badge/embark-open%20source-blueviolet.svg)](https://embark.dev)
 [![Embark](https://img.shields.io/badge/discord-ark-%237289da.svg?logo=discord)](https://discord.gg/dAuKfZS)
@@ -18,7 +18,7 @@
 [![dependency status](https://deps.rs/repo/github/EmbarkStudios/presser/status.svg)](https://deps.rs/repo/github/EmbarkStudios/presser)
 </div>
 
-`presser` can help you when copying data into raw buffers. One primary use-case is copying data into
+`presser` can help you when copying data into and reading data from raw buffers. One primary use-case is copying data into
 graphics-api-allocated buffers which will then be accessed by the GPU. Common methods for doing this
 right now in Rust can often invoke UB in subtle and hard-to-see ways. For example, viewing an allocated
 but uninitialized buffer as an `&mut [u8]` **is instantly undefined behavior**\*, and `transmute`ing even a
@@ -99,10 +99,20 @@ let copy_record = presser::copy_to_offset(&my_data, &mut slab, 0)?;
 // `my_data` may be placed at a different offset than requested. so, we check the returned
 // `CopyRecord` to check the actual start offset of the copied data.
 let actual_start_offset = copy_record.copy_start_offset;
+
+// we may later (*unsafely*) read back our data. note that the read helpers provided by presser
+// are mostly unsafe. They do help protect you from some common footguns, but you still ultimately need
+// to guarantee you put the proper data where you're telling it you put the proper data.
+let my_copied_data_in_my_buffer: &MyDataStruct = unsafe {
+    presser::read_at_offset(&slab, actual_start_offset)?
+};
 ```
 
-Note that actually accessing the copied data is a completely separate issue which `presser` does not
-(as of now) concern itself with. BE CAREFUL!
+Note that, as seen at the end, actually accessing the copied data is still unsafe. This means that you still need
+to take care that you're laying out your data exactly as whatever later reads it expects, whether that be a graphics
+API or your own data structure built on top of `presser`. The read functions that `presser` provides help check some
+common footguns (ensuring the given offset within the slab is properly aligned and the slab has enough memory to contain
+the wanted type), but they're still ultimately unsafe and require you to assert you put the proper data in the proper place.
 
 See more in [the git `main` docs](https://embarkstudios.github.io/presser/presser/index.html)
 or [the released version docs](https://docs.rs/presser).
