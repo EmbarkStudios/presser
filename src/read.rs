@@ -46,7 +46,10 @@ where
 /// `slab` will be used as the backing data to write the slice of `T`s into. The `*mut c_void`
 /// pointer given to the function will be as close to the beginning of `slab` as possible while
 /// upholding the alignment requirements of `T`.
-pub unsafe fn readback_slice_from_ffi<'a, T, S, F>(slab: &'a mut S, fill_slab: F) -> Result<&'a [T], Error>
+pub unsafe fn readback_slice_from_ffi<'a, T, S, F>(
+    slab: &'a mut S,
+    fill_slab: F,
+) -> Result<&'a [T], Error>
 where
     S: Slab,
     F: FnOnce(*mut c_void, usize) -> usize,
