@@ -145,7 +145,7 @@ pub use read::*;
 /// trait for the extra flexibility having a trait we own provides: namely, the ability
 /// to implement it on foreign types.
 ///
-/// It is implemented for a couple of built-in slab providers, as well as for `[MaybeUnint<u8>]`,
+/// It is implemented for a couple of built-in slab providers, as well as for `[MaybeUninit<u8>]`,
 /// but the idea is that you can also implement this for your own data structure which can
 /// serve as a slab and then use that structure directly with `presser`'s helpers.
 ///
@@ -262,7 +262,7 @@ pub unsafe trait Slab {
     {
         let maybe_uninit_slice = &self.as_maybe_uninit_bytes()[range];
         // SAFETY: same requirements as function-level safety assuming the requirements
-        // for creating `self` are met since `MaybeUnint<T>` has same layout as `T`
+        // for creating `self` are met since `MaybeUninit<T>` has same layout as `T`
         unsafe {
             core::slice::from_raw_parts(
                 maybe_uninit_slice.as_ptr().cast(),
@@ -294,7 +294,7 @@ pub unsafe trait Slab {
     {
         let maybe_uninit_slice = &mut self.as_maybe_uninit_bytes_mut()[range];
         // SAFETY: same requirements as function-level safety assuming the requirements
-        // for creating `self` are met since `MaybeUnint<T>` has same layout as `T`
+        // for creating `self` are met since `MaybeUninit<T>` has same layout as `T`
         unsafe {
             core::slice::from_raw_parts_mut(
                 maybe_uninit_slice.as_mut_ptr().cast(),
