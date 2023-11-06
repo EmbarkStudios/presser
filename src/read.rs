@@ -12,6 +12,14 @@ use super::*;
 /// to the function will be as close to the beginning of `slab` as possible while upholding the
 /// alignment requirements of `T`. If a `T` cannot fit into `slab` while upholding those alignment
 /// requirements and the size of `T`, an error will be returned and `fill_slab` will not be called.
+///
+/// # Safety
+///
+/// You must during the execution of `fill_slab` **fully-initialize** a **valid**\* `T`
+/// at the given pointer.
+///
+/// \* Validity is a complex topic not to be taken lightly.
+/// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 pub unsafe fn readback_from_ffi<'a, T, S, F>(slab: &'a mut S, fill_slab: F) -> Result<&'a T, Error>
 where
     S: Slab,
@@ -46,6 +54,15 @@ where
 /// `slab` will be used as the backing data to write the slice of `T`s into. The `*mut c_void`
 /// pointer given to the function will be as close to the beginning of `slab` as possible while
 /// upholding the alignment requirements of `T`.
+///
+/// # Safety
+///
+/// You must during the execution of `fill_slab` **fully-initialize** a **valid**\* slice of `T`
+/// beginning at the given pointer and with length greater than or equal to the length you return
+/// from that function.
+///
+/// \* Validity is a complex topic not to be taken lightly.
+/// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 pub unsafe fn readback_slice_from_ffi<'a, T, S, F>(
     slab: &'a mut S,
     fill_slab: F,
@@ -78,6 +95,7 @@ where
     //     - we have mutable access to all of `slab`, which includes `ptr`.
     Ok(unsafe { core::slice::from_raw_parts(ptr, written_n_of_ts) })
 }
+
 /// Gets a shared reference to a `T` within `slab` at `offset`.
 ///
 /// - `offset` is the offset, in bytes, after the start of `slab` at which a `T` is placed.
@@ -89,8 +107,9 @@ where
 ///
 /// # Safety
 ///
-/// You must have previously **fully-initialized** a **valid** `T` at the given offset into `slab`.
-/// Validity is a complex topic not to be taken lightly.
+/// You must have previously **fully-initialized** a **valid**\* `T` at the given offset into `slab`.
+///
+/// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
 pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Result<&'a T, Error> {
