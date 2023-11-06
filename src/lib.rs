@@ -381,7 +381,7 @@ pub enum Error {
     OffsetOutOfBounds,
     /// Computed invalid layout for copy operation, probably caused by incredibly large size, offset, or min-alignment parameters
     InvalidLayout,
-    /// The requested offset was unalignd. In a read operation, this means the provided offset into the buffer was not properly aligned
+    /// The requested offset was unaligned. In a read operation, this means the provided offset into the buffer was not properly aligned
     /// for the requested type.
     ///
     /// In an `exact` variant copy function, the computed copy start offset did not match the requested start offset,
