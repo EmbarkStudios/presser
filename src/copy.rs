@@ -423,8 +423,7 @@ pub fn copy_from_iter_to_offset_with_align_exact_packed<
     let mut prev_record = first_record;
 
     for item in src {
-        let copy_record =
-            copy_to_offset_with_align_exact(&item, dst, prev_record.end_offset, 1)?;
+        let copy_record = copy_to_offset_with_align_exact(&item, dst, prev_record.end_offset, 1)?;
         prev_record = copy_record;
     }
 

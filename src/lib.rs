@@ -324,7 +324,10 @@ pub unsafe trait Slab {
     {
         let maybe_uninit_slice = &self.as_maybe_uninit_bytes()[range];
 
-        (maybe_uninit_slice.base_ptr().cast(), maybe_uninit_slice.len())
+        (
+            maybe_uninit_slice.base_ptr().cast(),
+            maybe_uninit_slice.len(),
+        )
     }
 
     /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
@@ -345,7 +348,10 @@ pub unsafe trait Slab {
         R: core::slice::SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
     {
         let maybe_uninit_slice = &mut self.as_maybe_uninit_bytes_mut()[range];
-        (maybe_uninit_slice.base_ptr_mut().cast(), maybe_uninit_slice.len())
+        (
+            maybe_uninit_slice.base_ptr_mut().cast(),
+            maybe_uninit_slice.len(),
+        )
     }
 }
 
@@ -677,9 +683,7 @@ impl HeapSlab {
         }
         // SAFETY: we just checked size is not 0, and we got the ptr back from alloc so we no it's
         // not null.
-        let base_ptr = unsafe {
-            NonNull::new_unchecked(std::alloc::alloc(layout))
-        };
+        let base_ptr = unsafe { NonNull::new_unchecked(std::alloc::alloc(layout)) };
         Self { base_ptr, layout }
     }
 }
