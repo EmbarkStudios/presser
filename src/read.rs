@@ -2,6 +2,79 @@
 
 use super::*;
 
+/// Helper to read back data from an ffi function which expects a pointer into which it will write
+/// a `T`.
+///
+/// `fill_slab` is a function in which you must guarantee to write a valid `T` at the given
+/// [`*mut c_void`](c_void) pointer.
+///
+/// `slab` will be used as the backing data to write the `T` into. The `*mut c_void` pointer given
+/// to the function will be as close to the beginning of `slab` as possible while upholding the
+/// alignment requirements of `T`. If a `T` cannot fit into `slab` while upholding those alignment
+/// requirements and the size of `T`, an error will be returned and `fill_slab` will not be called.
+pub unsafe fn readback_from_ffi<'a, T, S, F>(slab: &'a mut S, fill_slab: F) -> Result<&'a T, Error>
+where
+    S: Slab,
+    F: FnOnce(*mut c_void),
+{
+    let t_layout = Layout::new::<T>();
+    let offsets = compute_and_validate_offsets(slab, 0, t_layout, 1, false)?;
+    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
+    let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<c_void>();
+
+    fill_slab(ptr);
+
+    let ptr = ptr.cast::<T>().cast_const();
+
+    // SAFETY:
+    // - `ptr` is properly aligned, checked by us
+    // - `slab` contains enough space for `T` at `ptr`, checked by us
+    // - if the function-level safety guarantees are met, then:
+    //     - `ptr` contains a previously-placed `T`
+    //     - we have mutable access to all of `slab`, which includes `ptr`.
+    Ok(unsafe { &*ptr })
+}
+
+/// Helper to read back data from an ffi function which expects a pointer into which it will write
+/// a slice (in C language, an array) of `T`s.
+///
+/// `fill_slab` is a function which takes as parameters first an aligned (for T)
+/// [`*mut c_void`](c_void) and second the number of bytes left in `slab` available for writing.
+/// It must then write a slice of `T`s into the given pointer and return the length, in units of
+/// `T`, of the slice it wrote.
+///
+/// `slab` will be used as the backing data to write the slice of `T`s into. The `*mut c_void`
+/// pointer given to the function will be as close to the beginning of `slab` as possible while
+/// upholding the alignment requirements of `T`.
+pub unsafe fn readback_slice_from_ffi<'a, T, S, F>(slab: &'a mut S, fill_slab: F) -> Result<&'a [T], Error>
+where
+    S: Slab,
+    F: FnOnce(*mut c_void, usize) -> usize,
+{
+    let t_layout = Layout::new::<T>();
+    let offsets = compute_and_validate_offsets(slab, 0, t_layout, 1, false)?;
+    // SAFETY: if compute_offsets succeeded, this has already been checked to be safe.
+    let ptr = unsafe { slab.base_ptr_mut().add(offsets.start) }.cast::<c_void>();
+
+    let writable_size = slab.size() - offsets.end_padded;
+    let written_n_of_ts = fill_slab(ptr, writable_size);
+
+    let layout_claimed_written = Layout::array::<T>(written_n_of_ts)?;
+    let end_offset = offsets.start + layout_claimed_written.size();
+    if end_offset > slab.size() {
+        return Err(Error::OutOfMemory);
+    }
+
+    let ptr = ptr.cast::<T>().cast_const();
+
+    // SAFETY:
+    // - `ptr` is properly aligned, checked by us
+    // - `slab` contains enough space for `[T; written_n_of_ts]` at `ptr`, checked by us
+    // - if the function-level safety guarantees are met, then:
+    //     - `ptr` contains a previously-placed `T`
+    //     - we have mutable access to all of `slab`, which includes `ptr`.
+    Ok(unsafe { core::slice::from_raw_parts(ptr, written_n_of_ts) })
+}
 /// Gets a shared reference to a `T` within `slab` at `offset`.
 ///
 /// - `offset` is the offset, in bytes, after the start of `slab` at which a `T` is placed.

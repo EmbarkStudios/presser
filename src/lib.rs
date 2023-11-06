@@ -333,6 +333,9 @@ pub unsafe trait Slab {
     /// View a portion of `self` as a [`c_void`] pointer and size, appropriate for sending to an FFI function
     /// to be filled and then read using one or more of the `read_` helper functions.
     ///
+    /// You may want to use [`readback_from_ffi`] or [`readback_sice_from_ffi`] instead, which are
+    /// even less prone to misuse.
+    ///
     /// # Panics
     ///
     /// Panics if the range is out of bounds of `self`
@@ -605,7 +608,7 @@ pub(crate) struct ComputedOffsets {
 }
 
 /// Compute and validate offsets for a copy or read operation with the given parameters.
-#[inline]
+#[inline(always)]
 pub(crate) fn compute_and_validate_offsets<S: Slab>(
     slab: &S,
     start_offset: usize,
