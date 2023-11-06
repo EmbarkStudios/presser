@@ -356,7 +356,7 @@ pub unsafe trait Slab {
 }
 
 // SAFETY: The captured `[MaybeUninit<u8>]` will all be part of the same allocation object, and borrowck
-// will assure that the borrows that occur on `self` on the relevant methods live long enough since they are
+// will ensure that the borrows that occur on `self` on the relevant methods live long enough since they are
 // native borrows anyway.
 unsafe impl Slab for [MaybeUninit<u8>] {
     fn base_ptr(&self) -> *const u8 {
