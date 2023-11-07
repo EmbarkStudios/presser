@@ -22,7 +22,7 @@ use super::*;
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 pub unsafe fn readback_from_ffi<'a, T, S, F>(slab: &'a mut S, fill_slab: F) -> Result<&'a T, Error>
 where
-    S: Slab,
+    S: Slab + ?Sized,
     F: FnOnce(*mut c_void),
 {
     let t_layout = Layout::new::<T>();
@@ -68,7 +68,7 @@ pub unsafe fn readback_slice_from_ffi<'a, T, S, F>(
     fill_slab: F,
 ) -> Result<&'a [T], Error>
 where
-    S: Slab,
+    S: Slab + ?Sized,
     F: FnOnce(*mut c_void, usize) -> usize,
 {
     let t_layout = Layout::new::<T>();
@@ -112,7 +112,10 @@ where
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Result<&'a T, Error> {
+pub unsafe fn read_at_offset<'a, T, S: Slab + ?Sized>(
+    slab: &'a S,
+    offset: usize,
+) -> Result<&'a T, Error> {
     let t_layout = Layout::new::<T>();
     let offsets = compute_and_validate_offsets(slab, offset, t_layout, 1, true)?;
 
@@ -144,7 +147,10 @@ pub unsafe fn read_at_offset<'a, T, S: Slab>(slab: &'a S, offset: usize) -> Resu
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_at_offset_unchecked<'a, T, S: Slab>(slab: &'a S, offset: usize) -> &'a T {
+pub unsafe fn read_at_offset_unchecked<'a, T, S: Slab + ?Sized>(
+    slab: &'a S,
+    offset: usize,
+) -> &'a T {
     // SAFETY: if offset is within the slab as guaranteed by function-level safety, this is
     // safe since a slab's size must be < isize::MAX
     let ptr = unsafe { slab.base_ptr().add(offset) }.cast::<T>();
@@ -182,7 +188,7 @@ pub unsafe fn read_at_offset_unchecked<'a, T, S: Slab>(slab: &'a S, offset: usiz
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(
+pub unsafe fn read_at_offset_mut<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
 ) -> Result<&'a mut T, Error> {
@@ -225,7 +231,7 @@ pub unsafe fn read_at_offset_mut<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_at_offset_mut_unchecked<'a, T, S: Slab>(
+pub unsafe fn read_at_offset_mut_unchecked<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
 ) -> &'a mut T {
@@ -266,7 +272,7 @@ pub unsafe fn read_at_offset_mut_unchecked<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(
+pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
 ) -> Result<&'a mut MaybeUninit<T>, Error> {
@@ -308,7 +314,7 @@ pub fn get_maybe_uninit_at_offset_mut<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn get_maybe_uninit_at_offset_mut_unchecked<'a, T, S: Slab>(
+pub unsafe fn get_maybe_uninit_at_offset_mut_unchecked<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
 ) -> &'a mut MaybeUninit<T> {
@@ -341,7 +347,7 @@ pub unsafe fn get_maybe_uninit_at_offset_mut_unchecked<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_slice_at_offset<'a, T, S: Slab>(
+pub unsafe fn read_slice_at_offset<'a, T, S: Slab + ?Sized>(
     slab: &'a S,
     offset: usize,
     len: usize,
@@ -382,7 +388,7 @@ pub unsafe fn read_slice_at_offset<'a, T, S: Slab>(
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 /// - See also safety docs of [`core::slice::from_raw_parts`].
 #[inline]
-pub unsafe fn read_slice_at_offset_unchecked<'a, T, S: Slab>(
+pub unsafe fn read_slice_at_offset_unchecked<'a, T, S: Slab + ?Sized>(
     slab: &'a S,
     offset: usize,
     len: usize,
@@ -425,7 +431,7 @@ pub unsafe fn read_slice_at_offset_unchecked<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab>(
+pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
     len: usize,
@@ -474,7 +480,7 @@ pub unsafe fn read_slice_at_offset_mut<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn read_slice_at_offset_mut_unchecked<'a, T, S: Slab>(
+pub unsafe fn read_slice_at_offset_mut_unchecked<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
     len: usize,
@@ -517,7 +523,7 @@ pub unsafe fn read_slice_at_offset_mut_unchecked<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(
+pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
     len: usize,
@@ -565,7 +571,7 @@ pub fn get_maybe_uninit_slice_at_offset_mut<'a, T, S: Slab>(
 /// \* Validity is a complex topic not to be taken lightly.
 /// See [this rust reference page](https://doc.rust-lang.org/reference/behavior-considered-undefined.html) for more details.
 #[inline]
-pub unsafe fn get_maybe_uninit_slice_at_offset_mut_unchecked<'a, T, S: Slab>(
+pub unsafe fn get_maybe_uninit_slice_at_offset_mut_unchecked<'a, T, S: Slab + ?Sized>(
     slab: &'a mut S,
     offset: usize,
     len: usize,

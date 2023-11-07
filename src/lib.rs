@@ -358,10 +358,10 @@ pub unsafe trait Slab {
     }
 }
 
-// SAFETY: The captured `[MaybeUninit<u8>]` will all be part of the same allocation object, and borrowck
+// SAFETY: The captured `[MaybeUninit<T>]` will all be part of the same allocation object, and borrowck
 // will ensure that the borrows that occur on `self` on the relevant methods live long enough since they are
 // native borrows anyway.
-unsafe impl Slab for [MaybeUninit<u8>] {
+unsafe impl<T> Slab for [MaybeUninit<T>] {
     fn base_ptr(&self) -> *const u8 {
         self.as_ptr().cast()
     }
@@ -609,7 +609,7 @@ pub(crate) struct ComputedOffsets {
 
 /// Compute and validate offsets for a copy or read operation with the given parameters.
 #[inline(always)]
-pub(crate) fn compute_and_validate_offsets<S: Slab>(
+pub(crate) fn compute_and_validate_offsets<S: Slab + ?Sized>(
     slab: &S,
     start_offset: usize,
     t_layout: Layout,
@@ -660,10 +660,11 @@ fn align_offset_up_to(ptr: usize, offset: usize, align: usize) -> Option<usize> 
     Some(aligned_ptr - ptr)
 }
 
-/// Make a `[MaybeUninit<u8>; N]` on the stack, which implements [`Slab`] and can therefore be used
+/// Make a `[MaybeUninit<T>; N]` on the stack, which implements [`Slab`] and can therefore be used
 /// with many of the helpers provided by this crate.
-pub fn make_stack_slab<const N: usize>() -> [MaybeUninit<u8>; N] {
-    [MaybeUninit::uninit(); N]
+pub fn make_stack_slab<T, const N: usize>() -> [MaybeUninit<T>; N] {
+    // SAFETY: An uninitialized `[MaybeUninit<_>; N]` is valid.
+    unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
 }
 
 /// A raw allocation on the heap which implements [`Slab`] and gets deallocated on [`Drop`].
@@ -717,5 +718,64 @@ unsafe impl Slab for HeapSlab {
     #[inline(always)]
     fn size(&self) -> usize {
         self.layout.size()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use core::ffi::c_void;
+    use core::ptr::NonNull;
+
+    use crate::copy_from_slice_to_offset;
+    use crate::make_stack_slab;
+    use crate::readback_slice_from_ffi;
+    use crate::RawAllocation;
+
+    #[test]
+    fn readback_ffi() {
+        #[repr(C)]
+        #[derive(Clone, Copy, Default, PartialEq, Debug)]
+        struct OverlapHit {
+            pos: [f32; 3],
+            normal: [f32; 3],
+        }
+
+        const MAX_HITS: usize = 32;
+
+        let mut hits_slab = make_stack_slab::<OverlapHit, MAX_HITS>();
+
+        let readback_hits = unsafe {
+            readback_slice_from_ffi(hits_slab.as_mut_slice(), |ptr, _| {
+                let written_hits = ffi_get_hits(ptr, MAX_HITS);
+                written_hits
+            })
+        }
+        .unwrap();
+
+        assert_eq!(&HITS_TO_WRITE, readback_hits);
+
+        const HITS_TO_WRITE: [OverlapHit; 2] = [
+            OverlapHit {
+                pos: [1.0, 2.0, 10.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            OverlapHit {
+                pos: [11.0, 5.0, 100.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+        ];
+
+        // simulate C ffi call to a physics lib
+        fn ffi_get_hits(out_hits: *mut c_void, max_len: usize) -> usize {
+            let mut slab = RawAllocation {
+                base_ptr: NonNull::new(out_hits.cast()).unwrap(),
+                size: max_len * core::mem::size_of::<OverlapHit>(),
+            };
+
+            copy_from_slice_to_offset(&HITS_TO_WRITE, &mut unsafe { slab.borrow_as_slab() }, 0)
+                .unwrap();
+
+            return HITS_TO_WRITE.len();
+        }
     }
 }
