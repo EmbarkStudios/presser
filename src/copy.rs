@@ -56,7 +56,7 @@ impl From<ComputedOffsets> for CopyRecord {
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline(always)]
-pub fn copy_to_offset_exact<T: Copy, S: Slab>(
+pub fn copy_to_offset_exact<T: Copy, S: Slab + ?Sized>(
     src: &T,
     dst: &mut S,
     start_offset: usize,
@@ -84,7 +84,7 @@ pub fn copy_to_offset_exact<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline(always)]
-pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab>(
+pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab + ?Sized>(
     src: &T,
     dst: &mut S,
     start_offset: usize,
@@ -127,7 +127,7 @@ pub fn copy_to_offset_with_align_exact<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_to_offset<T: Copy, S: Slab>(
+pub fn copy_to_offset<T: Copy, S: Slab + ?Sized>(
     src: &T,
     dst: &mut S,
     start_offset: usize,
@@ -154,7 +154,7 @@ pub fn copy_to_offset<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
+pub fn copy_to_offset_with_align<T: Copy, S: Slab + ?Sized>(
     src: &T,
     dst: &mut S,
     start_offset: usize,
@@ -197,7 +197,7 @@ pub fn copy_to_offset_with_align<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab>(
+pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab + ?Sized>(
     src: &[T],
     dst: &mut S,
     start_offset: usize,
@@ -225,7 +225,7 @@ pub fn copy_from_slice_to_offset_exact<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab>(
+pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab + ?Sized>(
     src: &[T],
     dst: &mut S,
     start_offset: usize,
@@ -268,7 +268,7 @@ pub fn copy_from_slice_to_offset_with_align_exact<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
+pub fn copy_from_slice_to_offset<T: Copy, S: Slab + ?Sized>(
     src: &[T],
     dst: &mut S,
     start_offset: usize,
@@ -297,7 +297,7 @@ pub fn copy_from_slice_to_offset<T: Copy, S: Slab>(
 /// things if you read the copied data in the wrong way. See the
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[inline]
-pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
+pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab + ?Sized>(
     src: &[T],
     dst: &mut S,
     start_offset: usize,
@@ -351,7 +351,7 @@ pub fn copy_from_slice_to_offset_with_align<T: Copy, S: Slab>(
 /// [crate-level Safety documentation][`crate#safety`] for more.
 #[cfg(feature = "std")]
 #[inline]
-pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
+pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S: Slab + ?Sized>(
     src: Iter,
     dst: &mut S,
     start_offset: usize,
@@ -374,7 +374,11 @@ pub fn copy_from_iter_to_offset_with_align<T: Copy, Iter: Iterator<Item = T>, S:
 /// Because of this, only one [`CopyRecord`] is returned specifying the record of the
 /// entire block of copied data. If the `src` iterator is empty, returns `None`.
 #[inline]
-pub fn copy_from_iter_to_offset_with_align_packed<T: Copy, Iter: Iterator<Item = T>, S: Slab>(
+pub fn copy_from_iter_to_offset_with_align_packed<
+    T: Copy,
+    Iter: Iterator<Item = T>,
+    S: Slab + ?Sized,
+>(
     mut src: Iter,
     dst: &mut S,
     start_offset: usize,
@@ -407,7 +411,7 @@ pub fn copy_from_iter_to_offset_with_align_packed<T: Copy, Iter: Iterator<Item =
 pub fn copy_from_iter_to_offset_with_align_exact_packed<
     T: Copy,
     Iter: Iterator<Item = T>,
-    S: Slab,
+    S: Slab + ?Sized,
 >(
     mut src: Iter,
     dst: &mut S,
