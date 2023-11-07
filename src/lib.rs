@@ -748,8 +748,7 @@ mod test {
 
         let readback_hits = unsafe {
             readback_slice_from_ffi(hits_slab.as_mut_slice(), |ptr, _| {
-                let written_hits = ffi_get_hits(ptr, MAX_HITS);
-                written_hits
+                ffi_get_hits(ptr, MAX_HITS)
             })
         }
         .unwrap();
@@ -777,7 +776,7 @@ mod test {
             copy_from_slice_to_offset(&HITS_TO_WRITE, &mut unsafe { slab.borrow_as_slab() }, 0)
                 .unwrap();
 
-            return HITS_TO_WRITE.len();
+            HITS_TO_WRITE.len()
         }
     }
 }
